@@ -1,0 +1,11 @@
+.git
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+hf_repo/
+redacted*.png
+*.pt

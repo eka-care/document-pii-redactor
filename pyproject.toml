@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eka-pii-redaction"
+version = "0.1.0"
+description = "Detect and redact text + visual PII in document images (LayoutLMv3 + YOLO)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "eka-care" }]
+keywords = ["pii", "redaction", "ocr", "layoutlmv3", "yolo", "document-ai"]
+
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.40",
+    "huggingface_hub>=0.23",
+    "pillow>=9.0",
+    "numpy>=1.24",
+    "pytesseract>=0.3.10",
+    "ultralytics>=8.1",
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
+dev = ["pytest>=7.4"]
+
+[project.urls]
+Homepage = "https://github.com/eka-care/Eka-PII-redactors"
+
+[tool.setuptools.packages.find]
+include = ["eka_pii_redaction*"]
