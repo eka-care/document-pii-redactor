@@ -14,7 +14,11 @@ keywords = ["pii", "redaction", "ocr", "layoutlmv3", "yolo", "document-ai"]
 
 dependencies = [
     "torch>=2.1",
-    "transformers>=4.40",
+    # The published weights are serialized with transformers 5.x (nested
+    # processor_config.json + new tokenizer.json format). transformers 4.x
+    # cannot load them, so require 5.x. (5.x needs Python >=3.10, matching
+    # requires-python above.)
+    "transformers>=5.0",
     "huggingface_hub>=0.23",
     "pillow>=9.0",
     "numpy>=1.24",
