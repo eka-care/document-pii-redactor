@@ -37,7 +37,8 @@ organized by modality:
   (47 L2 classes), run on Tesseract OCR words.
 - `image/yolo/best.pt` — YOLO detector for **visual entities** (signature,
   seal/stamp, QR/barcode, face photo, fingerprint, logo).
-- `text/` — reserved for the future text-only PII model.
+- `text/minilm/` — multilingual MiniLM token classifier for **text PII in plain
+  strings** (48 categories, char spans).
 
 ## Usage
 

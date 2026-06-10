@@ -55,6 +55,26 @@ redactor.redact("page.jpg", mode="blur").save("blurred.png")  # solid|blur|pixel
 
 `detect()` / `redact()` accept a file path, raw `bytes`, or a `PIL.Image`.
 
+### Text-only PII (plain strings)
+
+```python
+from eka_pii_redaction import TextPIIRedactor
+
+r = TextPIIRedactor("ekacare/pii-redactors")     # GPU if available, else CPU
+
+# 1) Character-span entities
+for s in r.detect("John Doe, DOB 1990-01-01, john@x.com"):
+    print(s.category, s.l1, s.start, s.end, s.text, s.score)
+
+# 2) Redacted string (mask supports {category} / {l1} placeholders)
+r.redact("Call John at john@x.com", mask="[REDACTED]")    # -> "Call [REDACTED] at [REDACTED]"
+r.redact("Call John at john@x.com", mask="[{category}]")  # -> "Call [primary_subject_name] at [email]"
+```
+
+`TextPIIRedactor` runs a multilingual MiniLM token classifier on raw text — no OCR,
+no image — and returns `TextPIISpan(category, start, end, l1, text, score)` with
+**character** offsets.
+
 ## API
 
 ### `ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None, exclude_entities=None, visual_score_threshold=0.25, ocr_lang=None, cache_dir=None)`
@@ -118,9 +138,10 @@ docker run --gpus all -p 8080:8080 \
 docker run -e EKA_PII_DEVICE=cpu -p 8080:8080 eka-pii-redaction
 ```
 
-Endpoints: `GET /health`, `GET /entities`, `POST /detect` (multipart `file`),
-`POST /redact` (multipart `file`, `mode`). Env: `EKA_PII_HF_REPO`,
-`EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`, `EKA_PII_EXCLUDE`.
+Endpoints: `GET /health`, `GET /entities`, `GET /entities-text`,
+`POST /detect` / `POST /redact` (multipart `file`), and
+`POST /detect-text` / `POST /redact-text` (JSON `{"text": ...}`).
+Env: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`, `EKA_PII_EXCLUDE`.
 
 ```bash
 curl -F file=@page.jpg http://localhost:8080/detect
@@ -138,8 +159,9 @@ eka_pii_redaction/
     redactor.py  -> ImagePIIRedactor
     layoutlmv3.py -> text-PII-in-image detector
     yolo11m.py    -> visual-entity detector
-  text/                             # TEXT modality (planned)
-    redactor.py  -> TextPIIRedactor  (redact PII inside plain-text blobs, no image)
+  text/                             # TEXT modality (implemented)
+    redactor.py  -> TextPIIRedactor  (PII inside plain-text strings, no image)
+    minilm.py    -> MiniLM token classifier (char-span detector)
 ```
 
 The single model repo mirrors this:
@@ -147,11 +169,11 @@ The single model repo mirrors this:
 ```
 <hf_repo>/
   image/ layoutlmv3/   yolo/best.pt
-  text/  …                          # reserved for the text-only model
+  text/  minilm/                    # multilingual MiniLM text-PII model
 ```
 
-> **Roadmap:** `eka_pii_redaction.text.TextPIIRedactor` will redact PII inside raw
-> strings (character spans, no OCR), reusing the shared category taxonomy.
+Both modalities share the category taxonomy (`eka_pii_redaction.taxonomy`); the
+text model also detects `mac_address` (device_net).
 
 ## Publishing the model weights
 
