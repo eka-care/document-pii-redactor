@@ -9,6 +9,7 @@ Two tabs:
   - Image : detect/annotate or redact PII regions in a document image.
   - Text  : detect PII in pasted text and highlight each span (color-coded by group).
 
+Both models are loaded once at startup and kept resident (cached) for the session.
 The model repo is downloaded via huggingface_hub, which uses your cached HF login
 (`huggingface-cli login`) or the HF_TOKEN env var automatically.
 """
@@ -43,6 +44,8 @@ L1_COLORS = {
 
 
 # ---------------------------------------------------------------- loaders --- #
+# Both redactors are cached resources: loaded once and kept resident for the whole
+# session (no lazy per-action loading). Cache keys are the load-time config.
 @st.cache_resource(show_spinner=False)
 def load_image_redactor(hf_repo: str, detect_visual: bool, device: str,
                         visual_score_threshold: float):
@@ -166,12 +169,35 @@ st.sidebar.title("⚙️ Configuration")
 hf_repo = st.sidebar.text_input("HF repo id (or local dir)", value=DEFAULT_HF_REPO)
 device = st.sidebar.selectbox(
     "Device", ["auto", "cpu", "cuda"], index=0,
-    help="auto = CUDA if available, else CPU. Shared by both tabs.",
+    help="auto = CUDA if available, else CPU. Shared by both models.",
 )
-if st.sidebar.button("🔄 Clear model cache", use_container_width=True):
+st.sidebar.markdown("**Image model**")
+detect_visual = st.sidebar.checkbox(
+    "Detect visual entities (YOLO)", value=True,
+    help="Off = text-in-image PII only; skips the YOLO weights + inference.",
+)
+visual_score_threshold = st.sidebar.slider(
+    "Visual score threshold", 0.0, 1.0, 0.25, 0.05, disabled=not detect_visual,
+)
+if st.sidebar.button("🔄 Reload models", use_container_width=True):
     load_image_redactor.clear()
     load_text_redactor.clear()
-    st.sidebar.success("Cache cleared — models reload on next run.")
+
+# Load BOTH models up front and keep them resident (cached) for the session.
+try:
+    with st.spinner("Loading models (first run downloads weights — may take a while)…"):
+        image_redactor = load_image_redactor(
+            hf_repo, detect_visual, device, visual_score_threshold)
+        text_redactor = load_text_redactor(hf_repo, device)
+    st.sidebar.success(
+        f"Models ready · image={image_redactor.device} · text={text_redactor.device}")
+except Exception as exc:  # noqa: BLE001 — surface load errors to the user
+    st.error(f"Failed to load models: {exc}")
+    st.info(
+        "If the repo is gated/private, log in first with `huggingface-cli login` "
+        "or set the HF_TOKEN env var before launching."
+    )
+    st.stop()
 
 st.title("🛡️ Eka PII Redactor — Tester")
 tab_img, tab_txt = st.tabs(["🖼️ Image", "📝 Text"])
@@ -180,15 +206,8 @@ tab_img, tab_txt = st.tabs(["🖼️ Image", "📝 Text"])
 with tab_img:
     st.subheader("Image modality")
 
-    detect_visual = st.checkbox(
-        "Detect visual entities (YOLO)", value=True,
-        help="Off = text-in-image PII only; skips the YOLO weights + inference.",
-    )
     c1, c2 = st.columns(2)
-    visual_score_threshold = c1.slider(
-        "Visual score threshold", 0.0, 1.0, 0.25, 0.05, disabled=not detect_visual,
-    )
-    ocr_lang = c2.text_input(
+    ocr_lang = c1.text_input(
         "OCR language (Tesseract)", value="",
         help='e.g. "eng" or "eng+Devanagari". Blank = default.',
     ).strip() or None
@@ -233,17 +252,11 @@ with tab_img:
                  caption="Original — press the button to run", use_container_width=True)
     elif uploaded is not None and run_img:
         image = Image.open(uploaded).convert("RGB")
-        try:
-            with st.spinner("Loading image model (first run downloads weights)…"):
-                redactor = load_image_redactor(
-                    hf_repo, detect_visual, device, visual_score_threshold)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Failed to load image model: {exc}")
-            st.stop()
 
         with st.spinner("Detecting…"):
             t0 = time.time()
-            entities = redactor.detect(image, exclude_entities=img_exclude, ocr_lang=ocr_lang)
+            entities = image_redactor.detect(
+                image, exclude_entities=img_exclude, ocr_lang=ocr_lang)
             detect_s = time.time() - t0
 
         n_text = sum(1 for e in entities if e.kind == "text")
@@ -256,7 +269,7 @@ with tab_img:
 
         if is_redact:
             with st.spinner("Redacting…"):
-                redacted = redactor.redact(
+                redacted = image_redactor.redact(
                     image, mode=redact_mode, color=redact_color,
                     exclude_entities=img_exclude, ocr_lang=ocr_lang,
                 )
@@ -319,16 +332,9 @@ with tab_txt:
     )
 
     if run_txt and text_in.strip():
-        try:
-            with st.spinner("Loading text model (first run downloads weights)…"):
-                tredactor = load_text_redactor(hf_repo, device)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Failed to load text model: {exc}")
-            st.stop()
-
         with st.spinner("Detecting…"):
             t0 = time.time()
-            spans = tredactor.detect(text_in, exclude_entities=txt_exclude)
+            spans = text_redactor.detect(text_in, exclude_entities=txt_exclude)
             detect_s = time.time() - t0
 
         m1, m2 = st.columns(2)
@@ -344,4 +350,4 @@ with tab_txt:
         else:
             st.info("No PII detected.")
     else:
-        st.info("✏️ Enter text and press **Detect PII**.")
+        st.info("✏️ Edit the preloaded example (or paste your own) and press **Detect PII**.")
