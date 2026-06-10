@@ -27,11 +27,17 @@ TEXT_L2_TO_L1: dict[str, str] = {
     "bank_account_number": "uid", "iban": "uid", "upi_id": "uid",
     "insurance_tpa_policy_no": "uid", "other_id": "uid", "vehicle_id_licence_plate": "uid",
     "ip_address": "device_net", "device_serial_identifier": "device_net",
+    "mac_address": "device_net",
     "password": "credential", "api_key_token": "credential", "high_entropy_secret": "credential",
     "brandname": "entity",
 }
 
 TEXT_ENTITIES: list[str] = list(TEXT_L2_TO_L1.keys())
+
+# Categories the TEXT modality (plain-string redactor) can emit. The text model
+# predicts every text category but none of the visual ones, so this is just the
+# text entity list — named separately so the text API can advertise its own set.
+TEXT_REDACTABLE: list[str] = list(TEXT_ENTITIES)
 
 # Visual entity categories (image regions, no associated OCR text). All share the
 # L1 group "biometric_visual".
