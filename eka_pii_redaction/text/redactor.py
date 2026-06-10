@@ -1,23 +1,19 @@
-"""TextPIIRedactor — detect & redact PII inside plain-text blobs (the TEXT modality).
+"""TextPIIRedactor — detect & redact PII inside plain-text strings (TEXT modality).
 
-STATUS: planned / not yet implemented.
-
-This is the text-only counterpart to `eka_pii_redaction.image.ImagePIIRedactor`.
-It operates on raw strings (no image, no OCR) and returns character-span
-annotations + a redacted string. The weights will live under `text/` in the same
-single model repo, mirroring the `image/` layout:
+The text counterpart to `eka_pii_redaction.image.ImagePIIRedactor`. Operates on
+raw strings (no image, no OCR) via a multilingual MiniLM token classifier and
+returns character-span annotations and/or a redacted string. The weights live
+under `text/minilm/` in the same single HF repo as the image models:
 
     <hf_repo>/
-        image/   layoutlmv3/, yolo/best.pt     # image modality (implemented)
-        text/    <text-pii-model>              # text modality (this)
-
-Intended API (parallels the image modality):
+        image/   layoutlmv3/, yolo/best.pt     # image modality
+        text/    minilm/                        # text modality (this)
 
     from eka_pii_redaction.text import TextPIIRedactor
 
     r = TextPIIRedactor("ekacare/pii-redactors")
     spans = r.detect("John Doe, DOB 1990-01-01, lives at ...")
-    #   -> list[TextPIISpan]: {category, start, end, text, l1, score}
+    #   -> list[TextPIISpan]: {category, start, end, l1, text, score}
     clean = r.redact("...", mask="[REDACTED]")   # -> str with PII replaced
 
 The category taxonomy is shared with the image modality (see
@@ -25,8 +21,16 @@ The category taxonomy is shared with the image modality (see
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
+from typing import Iterable, Optional
+
+from ..taxonomy import TEXT_REDACTABLE, validate_entities
+
+DEFAULT_HF_REPO = "ekacare/pii-redactors"
+# Text model location within the (single) model repo, organized by modality.
+MINILM_SUBDIR = "text/minilm"
 
 
 @dataclass
@@ -39,21 +43,111 @@ class TextPIISpan:
     text: str
     score: Optional[float] = None
 
+    def to_dict(self) -> dict:
+        return {
+            "category": self.category, "start": self.start, "end": self.end,
+            "l1": self.l1, "text": self.text, "score": self.score,
+        }
+
+
+def apply_mask(text: str, spans: "Iterable[TextPIISpan]", mask: str = "[REDACTED]") -> str:
+    """Replace each span's characters in `text` with `mask`.
+
+    `mask` may contain `{category}` and/or `{l1}` placeholders, filled per span;
+    a literal mask (no `{`) is inserted verbatim. Spans are applied left-to-right
+    on character offsets; any span overlapping an already-consumed region is
+    skipped so offsets stay valid.
+    """
+    out: list[str] = []
+    prev = 0
+    for sp in sorted(spans, key=lambda s: s.start):
+        if sp.start < prev:
+            continue
+        out.append(text[prev:sp.start])
+        out.append(mask.format(category=sp.category, l1=sp.l1) if "{" in mask else mask)
+        prev = sp.end
+    out.append(text[prev:])
+    return "".join(out)
+
+
+def _resolve_text_source(hf_repo: str, cache_dir: Optional[str]) -> str:
+    """Return the local dir holding the text model.
+
+    If `hf_repo` is an existing local directory it is used as-is (offline); else
+    the `text/minilm` files are pulled from the Hugging Face Hub."""
+    local = Path(hf_repo)
+    if local.is_dir():
+        d = local / MINILM_SUBDIR
+        return str(d if d.is_dir() else local)
+    from huggingface_hub import snapshot_download
+
+    snap = snapshot_download(
+        repo_id=hf_repo, allow_patterns=f"{MINILM_SUBDIR}/*", cache_dir=cache_dir
+    )
+    return os.path.join(snap, *MINILM_SUBDIR.split("/"))
+
 
 class TextPIIRedactor:
-    """Planned text-only PII redactor. Not yet implemented."""
+    """Detect and redact PII inside plain-text strings."""
 
-    _NOT_IMPLEMENTED = (
-        "TextPIIRedactor (text modality) is not implemented yet. Use "
-        "eka_pii_redaction.image.ImagePIIRedactor for document images. "
-        "Track progress in the repo roadmap."
-    )
+    AVAILABLE_ENTITIES = TEXT_REDACTABLE
 
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(self._NOT_IMPLEMENTED)
+    def __init__(
+        self,
+        hf_repo: str = DEFAULT_HF_REPO,
+        *,
+        device: Optional[str] = None,
+        exclude_entities: Optional[Iterable[str]] = None,
+        cache_dir: Optional[str] = None,
+    ):
+        """
+        Args:
+            hf_repo: Hugging Face repo id (or a local dir) holding the weights.
+            device: "cuda" / "cpu". None -> auto (cuda if available, else cpu).
+            exclude_entities: categories to never detect/redact. Default: none.
+        """
+        import torch
 
-    def detect(self, text: str) -> "list[TextPIISpan]":  # pragma: no cover
-        raise NotImplementedError(self._NOT_IMPLEMENTED)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._excluded = set(validate_entities(exclude_entities))
 
-    def redact(self, text: str, mask: str = "[REDACTED]") -> str:  # pragma: no cover
-        raise NotImplementedError(self._NOT_IMPLEMENTED)
+        # Imported here so a missing torch/transformers only bites at construction,
+        # and the pure helpers above stay importable for tests.
+        from .minilm import MiniLMDetector
+
+        model_dir = _resolve_text_source(hf_repo, cache_dir)
+        self.minilm = MiniLMDetector(model_dir, self.device)
+
+    @classmethod
+    def list_entities(cls) -> list[str]:
+        """Return all categories the text modality can detect/redact."""
+        return list(TEXT_REDACTABLE)
+
+    def _active_exclusions(self, extra: Optional[Iterable[str]]) -> set:
+        e = set(validate_entities(extra)) if extra else set()
+        return self._excluded | e
+
+    def detect(
+        self, text: str, *, exclude_entities: Optional[Iterable[str]] = None
+    ) -> "list[TextPIISpan]":
+        """Detect PII spans in `text`. Each TextPIISpan has `category`, `start`,
+        `end` (char offsets), `l1`, `text`, `score`.
+
+        `exclude_entities` (per-call) is unioned with the constructor's exclusions.
+        """
+        excluded = self._active_exclusions(exclude_entities)
+        return [s for s in self.minilm.detect(text) if s.category not in excluded]
+
+    def redact(
+        self,
+        text: str,
+        *,
+        mask: str = "[REDACTED]",
+        exclude_entities: Optional[Iterable[str]] = None,
+    ) -> str:
+        """Return `text` with every detected PII span replaced by `mask`.
+
+        `mask` may contain `{category}` / `{l1}` placeholders (see `apply_mask`).
+        """
+        spans = self.detect(text, exclude_entities=exclude_entities)
+        return apply_mask(text, spans, mask=mask)
