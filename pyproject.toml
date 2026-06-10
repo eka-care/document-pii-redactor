@@ -20,6 +20,9 @@ dependencies = [
     # requires-python above.)
     "transformers>=5.0",
     "huggingface_hub>=0.23",
+    # XLM-R tokenizer backing the text MiniLM model (fast path loads from
+    # tokenizer.json, but the slow-tokenizer fallback needs sentencepiece).
+    "sentencepiece>=0.1.99",
     "pillow>=9.0",
     "numpy>=1.24",
     "pytesseract>=0.3.10",
