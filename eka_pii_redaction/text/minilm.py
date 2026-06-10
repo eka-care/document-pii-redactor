@@ -89,3 +89,55 @@ def merge_bio_spans(text, offsets, labels, scores) -> "list[TextPIISpan]":
             cur["scores"].append(sc)
     flush()
     return spans
+
+
+class MiniLMDetector:
+    """Detects PII in a plain-text string via a MiniLM token classifier."""
+
+    def __init__(self, model_dir: str, device: str,
+                 max_length: int = 512, stride: int = 128):
+        self.device = device
+        self.max_length = max_length
+        self.stride = stride
+        self.tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=True)
+        if not self.tokenizer.is_fast:
+            raise RuntimeError(
+                "TextPIIRedactor needs a fast tokenizer (offset mapping); "
+                f"{model_dir} loaded a slow one."
+            )
+        self.model = (
+            AutoModelForTokenClassification.from_pretrained(model_dir).to(device).eval()
+        )
+        self.id2label = self.model.config.id2label
+
+    @torch.no_grad()
+    def detect(self, text: str) -> "list[TextPIISpan]":
+        """Return character-span PII entities for one text string."""
+        if not text or not text.strip():
+            return []
+
+        enc = self.tokenizer(
+            text,
+            return_offsets_mapping=True,
+            return_overflowing_tokens=True,
+            truncation=True,
+            padding="max_length",
+            max_length=self.max_length,
+            stride=self.stride,
+            return_tensors="pt",
+        )
+        offset_mapping = enc.pop("offset_mapping").tolist()   # (n_chunks, T, 2)
+        enc.pop("overflow_to_sample_mapping", None)
+        on_device = {k: v.to(self.device) for k, v in enc.items()}
+
+        logits = self.model(**on_device).logits               # (n_chunks, T, C)
+        probs = torch.softmax(logits, dim=-1)
+        pred_ids = logits.argmax(-1).cpu().tolist()
+        pred_scores = probs.max(-1).values.cpu().tolist()
+
+        chunk_offsets = [[tuple(o) for o in chunk] for chunk in offset_mapping]
+        chunk_labels = [[self.id2label[i] for i in ids] for ids in pred_ids]
+
+        offsets, labels, scores = _flatten_chunks(
+            chunk_offsets, chunk_labels, pred_scores)
+        return merge_bio_spans(text, offsets, labels, scores)
