@@ -1,8 +1,8 @@
 """LayoutLMv3 detector — finds text-based PII *within document images*.
 
 Runs Tesseract OCR (via the LayoutLMv3 image processor), classifies each OCR word
-with the LayoutLMv3 token classifier, and merges BIO tags into entity spans with
-pixel bounding boxes.
+with the LayoutLMv3 token classifier, and emits one entity per labeled word
+(BIO prefix stripped to a normalised category) with a pixel bounding box.
 
 This is the *image* modality. (A future *text* modality will redact PII inside
 plain-text blobs, with no image — see `eka_pii_redaction.text`.)
@@ -17,10 +17,6 @@ from transformers import AutoModelForTokenClassification, AutoProcessor
 
 from ..entities import PIIEntity
 from ..taxonomy import l1_group
-
-
-def _union(a: list[int], b: list[int]) -> list[int]:
-    return [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
 
 
 class LayoutLMv3Detector:
@@ -99,35 +95,20 @@ class LayoutLMv3Detector:
         finally:
             self.processor.image_processor.apply_ocr = True
 
-        # 3) Merge BIO tags into entity spans (union the word boxes), then convert
-        #    0..1000 boxes to pixel coordinates of the original image.
+        # 3) Emit one entity per labeled word (NO grouping/merging). Just strip the
+        #    BIO prefix (B-/I-) so the category is normalised (e.g. "PERSON"), and
+        #    convert each 0..1000 box to pixel coordinates of the original image.
         entities: list[PIIEntity] = []
-        cur = None
-
-        def flush():
-            if cur is None:
-                return
-            x0, y0, x1, y1 = cur["box"]
-            px = (int(x0 / 1000 * W), int(y0 / 1000 * H),
-                  int(x1 / 1000 * W), int(y1 / 1000 * H))
-            sc = cur["scores"]
-            entities.append(PIIEntity(
-                category=cur["category"], kind="text", bbox=px,
-                l1=l1_group(cur["category"]), text=" ".join(cur["words"]),
-                score=round(sum(sc) / len(sc), 4) if sc and all(s is not None for s in sc) else None,
-            ))
-
         for w, box, lab, sc in zip(words, boxes, labels, scores):
             if lab == "O":
-                flush(); cur = None
                 continue
-            tag, cat = lab[0], lab[2:]
-            if tag == "B" or cur is None or cur["category"] != cat:
-                flush()
-                cur = {"category": cat, "words": [w], "box": list(box), "scores": [sc]}
-            else:  # I- continuing same category
-                cur["words"].append(w)
-                cur["box"] = _union(cur["box"], list(box))
-                cur["scores"].append(sc)
-        flush()
+            cat = lab[2:] if lab[:2] in ("B-", "I-") else lab
+            x0, y0, x1, y1 = box
+            px = (int(x0 / 1000 * W), int(y0 / 1000 * H),
+                  int(x1 / 1000 * W), int(y1 / 1000 * H))
+            entities.append(PIIEntity(
+                category=cat, kind="text", bbox=px,
+                l1=l1_group(cat), text=w,
+                score=round(sc, 4) if sc is not None else None,
+            ))
         return entities

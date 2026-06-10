@@ -6,7 +6,7 @@ Run:
     streamlit run streamlit_app.py
 
 Two tabs:
-  - Image : detect/annotate or redact PII regions in a document image.
+  - Image : redact PII regions in a document image (auto-runs on upload).
   - Text  : detect PII in pasted text and highlight each span (color-coded by group).
 
 Both models are loaded once at startup and kept resident (cached) for the session.
@@ -27,6 +27,13 @@ from eka_pii_redaction.taxonomy import TEXT_ENTITIES, TEXT_REDACTABLE, VISUAL_EN
 
 st.set_page_config(page_title="Eka PII Redactor — Tester", layout="wide")
 
+# Fixed model config — the app always loads with this configuration (no UI knobs).
+HF_REPO = DEFAULT_HF_REPO
+DEVICE = "auto"
+DETECT_VISUAL = True
+VISUAL_SCORE_THRESHOLD = 0.25
+OCR_LANG = None
+
 # A distinct color per coarse L1 group, used by both the image overlay and the
 # text highlighter.
 L1_COLORS = {
@@ -45,7 +52,7 @@ L1_COLORS = {
 
 # ---------------------------------------------------------------- loaders --- #
 # Both redactors are cached resources: loaded once and kept resident for the whole
-# session (no lazy per-action loading). Cache keys are the load-time config.
+# session (no lazy per-action loading).
 @st.cache_resource(show_spinner=False)
 def load_image_redactor(hf_repo: str, detect_visual: bool, device: str,
                         visual_score_threshold: float):
@@ -164,31 +171,13 @@ def span_rows(spans):
     ]
 
 
-# ---------------------------------------------------------------- sidebar --- #
-st.sidebar.title("⚙️ Configuration")
-hf_repo = st.sidebar.text_input("HF repo id (or local dir)", value=DEFAULT_HF_REPO)
-device = st.sidebar.selectbox(
-    "Device", ["auto", "cpu", "cuda"], index=0,
-    help="auto = CUDA if available, else CPU. Shared by both models.",
-)
-st.sidebar.markdown("**Image model**")
-detect_visual = st.sidebar.checkbox(
-    "Detect visual entities (YOLO)", value=True,
-    help="Off = text-in-image PII only; skips the YOLO weights + inference.",
-)
-visual_score_threshold = st.sidebar.slider(
-    "Visual score threshold", 0.0, 1.0, 0.25, 0.05, disabled=not detect_visual,
-)
-if st.sidebar.button("🔄 Reload models", use_container_width=True):
-    load_image_redactor.clear()
-    load_text_redactor.clear()
-
+# ---------------------------------------------------------------- startup -- #
 # Load BOTH models up front and keep them resident (cached) for the session.
 try:
     with st.spinner("Loading models (first run downloads weights — may take a while)…"):
         image_redactor = load_image_redactor(
-            hf_repo, detect_visual, device, visual_score_threshold)
-        text_redactor = load_text_redactor(hf_repo, device)
+            HF_REPO, DETECT_VISUAL, DEVICE, VISUAL_SCORE_THRESHOLD)
+        text_redactor = load_text_redactor(HF_REPO, DEVICE)
     st.sidebar.success(
         f"Models ready · image={image_redactor.device} · text={text_redactor.device}")
 except Exception as exc:  # noqa: BLE001 — surface load errors to the user
@@ -205,58 +194,35 @@ tab_img, tab_txt = st.tabs(["🖼️ Image", "📝 Text"])
 # ================================================================ IMAGE ==== #
 with tab_img:
     st.subheader("Image modality")
+    st.caption("Upload a document image — it is detected and redacted automatically.")
 
-    c1, c2 = st.columns(2)
-    ocr_lang = c1.text_input(
-        "OCR language (Tesseract)", value="",
-        help='e.g. "eng" or "eng+Devanagari". Blank = default.',
-    ).strip() or None
+    rc1, rc2 = st.columns([2, 1])
+    redact_mode = rc1.selectbox("Redaction mode", ["solid", "blur", "pixelate"], index=1)
+    hex_color = rc2.color_picker(
+        "Fill color (solid)", value="#000000", disabled=redact_mode != "solid")
+    redact_color = tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
 
     with st.expander("Exclude categories (never detect/redact)"):
         exclude_text = st.multiselect(
             "Text categories", TEXT_ENTITIES, default=[], key="img_excl_text")
         exclude_visual = st.multiselect(
-            "Visual categories", VISUAL_ENTITIES, default=[],
-            disabled=not detect_visual, key="img_excl_visual",
-        )
+            "Visual categories", VISUAL_ENTITIES, default=[], key="img_excl_visual")
     img_exclude = (list(exclude_text) + list(exclude_visual)) or None
-
-    action = st.radio(
-        "Action", ["Detect (annotate boxes)", "Redact"], horizontal=True,
-        help="Detect draws labeled boxes around PII. Redact hides each PII region.",
-    )
-    is_redact = action == "Redact"
-
-    redact_mode, redact_color = "solid", (0, 0, 0)
-    if is_redact:
-        with st.container(border=True):
-            rc1, rc2 = st.columns([2, 1])
-            redact_mode = rc1.selectbox("Mode", ["solid", "blur", "pixelate"], index=0)
-            hex_color = rc2.color_picker(
-                "Fill color (solid)", value="#000000", disabled=redact_mode != "solid"
-            )
-            redact_color = tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
 
     uploaded = st.file_uploader(
         "Upload a document image",
         type=["png", "jpg", "jpeg", "bmp", "tiff", "webp"],
     )
-    run_img = st.button(
-        f"🔍 {'Detect & annotate' if not is_redact else 'Detect & redact'}",
-        type="primary", use_container_width=True, disabled=uploaded is None,
-        key="run_img",
-    )
 
-    if uploaded is not None and not run_img:
-        st.image(Image.open(uploaded).convert("RGB"),
-                 caption="Original — press the button to run", use_container_width=True)
-    elif uploaded is not None and run_img:
+    if uploaded is None:
+        st.info("⬆️ Upload an image to begin.")
+    else:
         image = Image.open(uploaded).convert("RGB")
 
         with st.spinner("Detecting…"):
             t0 = time.time()
             entities = image_redactor.detect(
-                image, exclude_entities=img_exclude, ocr_lang=ocr_lang)
+                image, exclude_entities=img_exclude, ocr_lang=OCR_LANG)
             detect_s = time.time() - t0
 
         n_text = sum(1 for e in entities if e.kind == "text")
@@ -267,30 +233,21 @@ with tab_img:
         m3.metric("Visual", n_visual)
         m4.metric("Detect time", f"{detect_s:.1f}s")
 
-        if is_redact:
-            with st.spinner("Redacting…"):
-                redacted = image_redactor.redact(
-                    image, mode=redact_mode, color=redact_color,
-                    exclude_entities=img_exclude, ocr_lang=ocr_lang,
-                )
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.caption("Detections")
-                st.image(draw_boxes(image, entities), use_container_width=True)
-            with col_b:
-                st.caption(f"Redacted ({redact_mode})")
-                st.image(redacted, use_container_width=True)
-                st.download_button(
-                    "⬇️ Download redacted PNG", data=to_png_bytes(redacted),
-                    file_name="redacted.png", mime="image/png",
-                    use_container_width=True,
-                )
-        else:
-            st.caption("Annotated detections")
+        with st.spinner("Redacting…"):
+            redacted = image_redactor.redact(
+                image, mode=redact_mode, color=redact_color,
+                exclude_entities=img_exclude, ocr_lang=OCR_LANG,
+            )
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.caption("Detections")
             st.image(draw_boxes(image, entities), use_container_width=True)
+        with col_b:
+            st.caption(f"Redacted ({redact_mode})")
+            st.image(redacted, use_container_width=True)
             st.download_button(
-                "⬇️ Download annotated PNG", data=to_png_bytes(draw_boxes(image, entities)),
-                file_name="annotated.png", mime="image/png",
+                "⬇️ Download redacted PNG", data=to_png_bytes(redacted),
+                file_name="redacted.png", mime="image/png", use_container_width=True,
             )
 
         st.caption("Detected entities")
@@ -298,8 +255,6 @@ with tab_img:
             st.dataframe(entity_rows(entities), use_container_width=True, hide_index=True)
         else:
             st.info("No PII entities detected.")
-    else:
-        st.info("⬆️ Upload an image to begin.")
 
 # ================================================================ TEXT ===== #
 with tab_txt:
