@@ -31,7 +31,9 @@ pip install -e .            # core library
 pip install -e ".[server]"  # + FastAPI service
 ```
 
-System dependency: **Tesseract OCR** (used for the text model).
+System dependency: **Tesseract OCR** — required for the **image** modality
+(it OCRs the document before the text-in-image classifier runs on the
+words); not needed for the text-only modality.
 
 ```bash
 # Debian/Ubuntu
