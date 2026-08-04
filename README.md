@@ -88,7 +88,13 @@ no image — and returns `TextPIISpan(category, start, end, l1, text, score)` wi
 
 ## API
 
-### `ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None, exclude_entities=None, visual_score_threshold=0.25, ocr_lang=None, cache_dir=None)`
+### ImagePIIRedactor
+
+```python
+ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
+                  exclude_entities=None, visual_score_threshold=0.25,
+                  ocr_lang=None, cache_dir=None)
+```
 
 | arg | meaning |
 |---|---|
@@ -99,7 +105,11 @@ no image — and returns `TextPIISpan(category, start, end, l1, text, score)` wi
 | `visual_score_threshold` | YOLO confidence cutoff. |
 | `ocr_lang` | Tesseract language/script, e.g. `"eng"`, `"eng+Devanagari"`. |
 
-### `detect(image, *, exclude_entities=None, ocr_lang=None) -> list[PIIEntity]`
+### detect
+
+```python
+detect(image, *, exclude_entities=None, ocr_lang=None) -> list[PIIEntity]
+```
 
 Each `PIIEntity` has:
 
@@ -112,11 +122,20 @@ Each `PIIEntity` has:
 | `text` | OCR text (text entities) or `None` (visual) |
 | `score` | confidence in `[0,1]` |
 
-### `redact(image, *, mode="solid", color=(0,0,0), exclude_entities=None, ocr_lang=None, pad=2) -> PIL.Image`
+### redact
+
+```python
+redact(image, *, mode="solid", color=(0,0,0), exclude_entities=None,
+       ocr_lang=None, pad=2) -> PIL.Image
+```
 
 Returns a redacted copy. `mode` ∈ `solid` | `blur` | `pixelate`.
 
-### `ImagePIIRedactor.list_entities() -> {"text": [...], "visual": [...]}`
+### list_entities
+
+```python
+ImagePIIRedactor.list_entities() -> {"text": [...], "visual": [...]}
+```
 
 All selectable categories.
 
