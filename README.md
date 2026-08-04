@@ -50,7 +50,8 @@ from eka_pii_redaction import ImagePIIRedactor
 # Loads both models from one HF repo; GPU if available, else CPU.
 redactor = ImagePIIRedactor(
     "ekacare/pii-redactors",
-    detect_visual=True,          # set False to skip the visual-detector download
+    detect_visual=True,          # set False to skip visual entities (QR codes,
+                                  # face photos, signatures, etc.) — text PII only
     # device="cpu",              # force CPU (default: auto)
     # exclude_entities=["logo", "brandname"],  # never redact these
 )
@@ -99,7 +100,7 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 | arg | meaning |
 |---|---|
 | `hf_repo` | HF repo id **or** a local dir with `text_model/` + `visual_model/best.pt`. |
-| `detect_visual` | If `False`, the visual-detector weights are **not** downloaded or loaded — text PII only. |
+| `detect_visual` | If `False`, visual entities (QR codes, face photos, signatures, etc.) are **not** downloaded or loaded — text PII only. |
 | `device` | `"cuda"` / `"cpu"`. `None` → auto (CUDA if available). |
 | `exclude_entities` | Categories to never detect/redact. Default: none excluded (all on). |
 | `visual_score_threshold` | Visual-entity confidence cutoff. |
