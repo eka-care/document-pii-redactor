@@ -53,6 +53,18 @@ def test_visual_entities_are_not_grouped():
     assert group_text_entities(entities) == []
 
 
+def test_text_inside_visual_entity_is_dropped():
+    # A logo's own lettering gets OCR'd as a text word inside the logo box;
+    # the placeholder already covers it — no label should render there.
+    entities = [
+        _word("logo", (100, 100, 300, 250), None, kind="visual"),
+        _word("brandname", (150, 140, 260, 200), "WS"),
+        _word("brandname", (400, 140, 520, 200), "Clinic"),  # outside: kept
+    ]
+    groups = group_text_entities(entities)
+    assert [g.text for g in groups] == ["Clinic"]
+
+
 def test_mixed_box_heights_on_one_printed_line_still_merge():
     # Real OCR gives differing box heights for words on the same line; that
     # must not split "John Doe" into Person_1 + Person_2.

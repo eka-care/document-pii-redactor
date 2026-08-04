@@ -137,6 +137,13 @@ def _merge_blocks(groups: list[EntityGroup]) -> list[EntityGroup]:
     return merged
 
 
+def _mostly_inside(inner: tuple, outer: tuple, threshold: float = 0.7) -> bool:
+    ix = max(0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
+    iy = max(0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
+    area = (inner[2] - inner[0]) * (inner[3] - inner[1])
+    return area > 0 and (ix * iy) / area >= threshold
+
+
 def group_text_entities(entities: list[PIIEntity]) -> list[EntityGroup]:
     """Merge word runs into logical entities; groups return in reading order.
 
@@ -145,9 +152,13 @@ def group_text_entities(entities: list[PIIEntity]) -> list[EntityGroup]:
     word extends its category's open group when the horizontal gap is within
     _MAX_GAP_FACTOR x line height, even across interleaved words of other
     categories. Same-category groups on tightly stacked lines then merge
-    into blocks. Visual entities are not grouped.
+    into blocks. Visual entities are not grouped, and text words sitting
+    mostly inside a visual entity's box are dropped — they're part of that
+    graphic (a logo's lettering), already covered by its placeholder.
     """
-    words = [e for e in entities if e.kind == "text"]
+    visual_boxes = [e.bbox for e in entities if e.kind == "visual"]
+    words = [e for e in entities if e.kind == "text"
+             and not any(_mostly_inside(e.bbox, v) for v in visual_boxes)]
     groups: list[EntityGroup] = []
     for line in _cluster_lines(words):
         line_height = max(e.bbox[3] - e.bbox[1] for e in line)
@@ -233,18 +244,30 @@ def _fitted_font(draw: ImageDraw.ImageDraw, text: str, box_w: int,
     return font
 
 
-def _label_size(box_h: int, type_h: int) -> int:
-    """Pick a label size that neither drowns in the box nor balloons.
+def _bucket_em_sizes(groups: list[EntityGroup]) -> list[int]:
+    """Per-group font size, quantized to three document-relative buckets.
 
-    DejaVu's cap height is ~0.72 em while printed glyphs typically fill most
-    of their OCR box, so an em equal to the word height renders visibly
-    smaller than the original — compensate by 1.2x. Tall merged blocks grow
-    toward ~72% of the block height so the label fills the erased area, but
-    never beyond 2.2x the original word size.
+    Fully dynamic sizing amplified OCR noise — a garbage box spanning two
+    stacked lines rendered a billboard label. Instead: the document's body
+    size is the word-count-weighted median of group type heights, and every
+    label is small (0.8x), body (1x), or large (1.6x) by how its own type
+    height compares. Uniform sizes also simply read better. The 1.2 factor
+    compensates DejaVu's ~0.72 cap-height-to-em ratio so body labels match
+    neighboring print.
     """
-    if box_h <= 1.6 * type_h:
-        return int(1.2 * type_h)
-    return int(min(0.72 * box_h, 2.2 * type_h))
+    if not groups:
+        return []
+    heights: list[int] = []
+    for g in groups:
+        heights.extend([g.type_height] * max(1, len(g.word_heights)))
+    heights.sort()
+    body = heights[len(heights) // 2]
+    sizes = []
+    for g in groups:
+        ratio = g.type_height / body if body else 1.0
+        bucket = 0.8 if ratio < 0.75 else (1.6 if ratio > 1.5 else 1.0)
+        sizes.append(max(8, int(1.2 * bucket * body)))
+    return sizes
 
 
 def _padded(bbox: tuple, img: Image.Image) -> tuple[int, int, int, int]:
@@ -265,12 +288,12 @@ def erase_box(img: Image.Image, bbox: tuple) -> tuple[int, int, int]:
 
 def draw_label_in_box(img: Image.Image, bbox: tuple, replacement: str,
                       bg: tuple[int, int, int],
-                      type_height: int | None = None) -> None:
-    """Draw `replacement` in the box at the original text's size.
+                      type_height: int | None = None,
+                      em_size: int | None = None) -> None:
+    """Draw `replacement` in the box at `em_size` (or the box height).
 
-    `type_height` is the group's median word height — using it instead of the
-    union box height keeps labels the same visual size as neighboring print
-    even when the erased region is much taller (merged blocks).
+    `type_height` (the group's word height) decides baseline vs centered
+    placement; `em_size` comes from the document-level buckets.
     """
     draw = ImageDraw.Draw(img)
     x0, y0, x1, y1 = bbox
@@ -278,7 +301,7 @@ def draw_label_in_box(img: Image.Image, bbox: tuple, replacement: str,
     ink = (20, 20, 20) if luminance > 140 else (245, 245, 245)
     height = min(type_height or (y1 - y0), y1 - y0)
     font = _fitted_font(draw, replacement, max(1, x1 - x0 - 2),
-                        _label_size(y1 - y0, max(1, height)))
+                        em_size or max(8, int(1.2 * height)))
     if (y1 - y0) <= 1.6 * height:
         # Single-line region: sit the label on the original baseline (OCR
         # boxes include descender space, so the baseline is a bit above the
@@ -330,14 +353,15 @@ def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
     out = img.convert("RGB").copy()
     groups = group_text_entities(entities)
     visuals = [e for e in entities if e.kind == "visual"]
+    sizes = _bucket_em_sizes(groups)
 
     backgrounds = [erase_box(out, g.bbox) for g in groups]
     for v in visuals:
         fill_visual_placeholder(out, v.bbox)
 
-    for g, bg in zip(groups, backgrounds):
+    for g, bg, em in zip(groups, backgrounds, sizes):
         draw_label_in_box(out, g.bbox, mapping.pseudonym_for(g.category, g.text),
-                          bg, type_height=g.type_height)
+                          bg, type_height=g.type_height, em_size=em)
     for v in visuals:
         label_visual_placeholder(out, v.bbox, v.category)
     return out
@@ -347,13 +371,14 @@ def apply_anonymize(img: Image.Image, entities: list[PIIEntity]) -> Image.Image:
     out = img.convert("RGB").copy()
     groups = group_text_entities(entities)
     visuals = [e for e in entities if e.kind == "visual"]
+    sizes = _bucket_em_sizes(groups)
 
     backgrounds = [erase_box(out, g.bbox) for g in groups]
     draw = ImageDraw.Draw(out)
     for v in visuals:
         draw.rectangle(list(v.bbox), fill=(0, 0, 0))
 
-    for g, bg in zip(groups, backgrounds):
+    for g, bg, em in zip(groups, backgrounds, sizes):
         draw_label_in_box(out, g.bbox, anonymize_value(g.category, g.text),
-                          bg, type_height=g.type_height)
+                          bg, type_height=g.type_height, em_size=em)
     return out
