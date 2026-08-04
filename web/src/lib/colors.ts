@@ -19,3 +19,10 @@ export function l1Rgb(group: string): string {
   const [r, g, b] = L1_COLORS[group] ?? L1_COLORS.unknown
   return `rgb(${r}, ${g}, ${b})`
 }
+
+// Light tint of the same color, for subtle highlight backgrounds (dark text
+// stays readable on top, unlike the solid chip fill used elsewhere).
+export function l1Tint(group: string, alpha = 0.14): string {
+  const [r, g, b] = L1_COLORS[group] ?? L1_COLORS.unknown
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}

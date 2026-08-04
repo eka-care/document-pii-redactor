@@ -20,23 +20,10 @@
 }
 
 .brand-mark {
-  width: 34px;
-  height: 34px;
   flex-shrink: 0;
-  background: var(--ink);
-  border-radius: var(--radius-sm);
-  position: relative;
+  font-size: 1.9rem;
+  line-height: 1;
   margin-top: 2px;
-}
-
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  top: 15px;
-  height: 4px;
-  background: var(--accent);
 }
 
 .brand-title {
@@ -165,6 +152,11 @@
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.field-hint {
+  font-size: 0.72rem;
   color: var(--muted);
 }
 
@@ -384,14 +376,27 @@ input:disabled {
 
 .highlighted-text {
   white-space: pre-wrap;
-  line-height: 1.9;
+  line-height: 2;
   font-size: 0.95rem;
 }
 
-.highlighted-text mark {
-  color: #fff;
-  padding: 1px 3px;
-  border-radius: 2px;
+.pii-mark {
+  display: inline;
+  color: var(--ink);
+  border: 1.5px solid;
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin: 0 1px;
+  white-space: pre-wrap;
+}
+
+.pii-tag {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin-left: 3px;
+  white-space: nowrap;
 }
 
 .table-scroll {

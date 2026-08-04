@@ -177,6 +177,7 @@ export default function ImageTab({
                 disabled={mode !== 'solid'}
                 onChange={(e) => setColor(e.target.value)}
               />
+              {mode !== 'solid' && <span className="field-hint">Solid mode only</span>}
             </label>
           </div>
 

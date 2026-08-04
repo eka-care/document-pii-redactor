@@ -49,10 +49,12 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <span className="brand-mark" aria-hidden="true">
+            🛡️
+          </span>
           <div>
             <h1 className="brand-title">Eka PII Redactor</h1>
-            <p className="subtitle">Detect and redact PII in documents and plain text</p>
+            <p className="subtitle">Redact PII in images and plain text</p>
           </div>
         </div>
         <div className={`status-pill ${ready ? 'is-ready' : 'is-loading'}`} role="status">

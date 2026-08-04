@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { detectText, type TextPIISpan } from '../lib/api'
-import { l1Rgb } from '../lib/colors'
+import { l1Rgb, l1Tint } from '../lib/colors'
 import Legend from './Legend'
 
 const EXAMPLE_TEXT = `DISCHARGE SUMMARY
@@ -20,8 +20,16 @@ function renderHighlighted(text: string, spans: TextPIISpan[]) {
     if (sp.start < prev) continue
     parts.push(text.slice(prev, sp.start))
     parts.push(
-      <mark key={i} style={{ background: l1Rgb(sp.l1) }} title={`${sp.category} · ${sp.score != null ? sp.score.toFixed(3) : '?'}`}>
+      <mark
+        key={i}
+        className="pii-mark"
+        style={{ background: l1Tint(sp.l1), borderColor: l1Rgb(sp.l1) }}
+        title={`${sp.category} · ${sp.score != null ? sp.score.toFixed(3) : '?'}`}
+      >
         {text.slice(sp.start, sp.end)}
+        <sup className="pii-tag" style={{ color: l1Rgb(sp.l1) }}>
+          {sp.category}
+        </sup>
       </mark>,
     )
     prev = sp.end
