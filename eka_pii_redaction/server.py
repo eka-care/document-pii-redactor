@@ -18,7 +18,7 @@ from __future__ import annotations
 import io
 import os
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -29,13 +29,27 @@ _redactor: ImagePIIRedactor | None = None
 _text_redactor = None  # built lazily on first /detect-text or /redact-text call
 
 
+def _parse_exclude(exclude: str | None) -> list[str] | None:
+    """Comma-separated query param -> list, or None if empty/absent."""
+    if not exclude:
+        return None
+    return [s for s in exclude.split(",") if s]
+
+
+def _parse_hex_color(color: str) -> tuple[int, int, int]:
+    color = color.lstrip("#")
+    return (int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16))
+
+
 class _TextIn(BaseModel):
     text: str
+    exclude: list[str] | None = None
 
 
 class _RedactTextIn(BaseModel):
     text: str
     mask: str = "[REDACTED]"
+    exclude: list[str] | None = None
 
 
 def _get_text():
@@ -86,16 +100,24 @@ def entities():
 
 
 @app.post("/detect")
-async def detect(file: UploadFile = File(...)):
+async def detect(file: UploadFile = File(...), exclude: str | None = Query(None)):
     data = await file.read()
-    ents = _get().detect(data)
+    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
     return JSONResponse({"entities": [e.to_dict() for e in ents]})
 
 
 @app.post("/redact")
-async def redact(file: UploadFile = File(...), mode: str = Form("solid")):
+async def redact(
+    file: UploadFile = File(...),
+    mode: str = Form("solid"),
+    color: str = Form("000000"),
+    exclude: str | None = Query(None),
+):
     data = await file.read()
-    img = _get().redact(data, mode=mode)
+    img = _get().redact(
+        data, mode=mode, color=_parse_hex_color(color),
+        exclude_entities=_parse_exclude(exclude),
+    )
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
@@ -109,10 +131,20 @@ def entities_text():
 
 @app.post("/detect-text")
 def detect_text(body: _TextIn):
-    spans = _get_text().detect(body.text)
+    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
     return {"spans": [s.to_dict() for s in spans]}
 
 
 @app.post("/redact-text")
 def redact_text(body: _RedactTextIn):
-    return {"text": _get_text().redact(body.text, mask=body.mask)}
+    text = _get_text().redact(body.text, mask=body.mask, exclude_entities=body.exclude)
+    return {"text": text}
+
+
+# Serve the built React app (web/dist) at "/". Mounted last so it never shadows
+# the API routes above — StaticFiles only matches what FastAPI's router doesn't.
+_WEB_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "dist")
+if os.path.isdir(_WEB_DIST):
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=_WEB_DIST, html=True), name="web")
