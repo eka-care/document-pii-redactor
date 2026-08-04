@@ -1,17 +1,30 @@
 # Eka-PII-redaction
 
-Detect and redact **PII in document images** — both **text** PII (names, addresses,
-IDs, dates, phone/email, …) and **visual** entities (signatures, stamps/seals,
-QR/barcodes, face photos, fingerprints, logos) — behind a single class.
+Detect **PII in document images and plain text** — both **text** PII (names,
+addresses, IDs, dates, phone/email, …) and **visual** entities (signatures,
+stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**,
+**de-identify**, or **anonymize** it, behind a single class per modality.
 
+- **Three modes, one detector.**
+  **Redact** destroys the value (mask/black-out — nothing kept).
+  **De-identify** replaces each entity with a consistent pseudonym
+  (`Person_1`) and returns the entity→pseudonym mapping so an authorized
+  key-holder can re-link later.
+  **Anonymize** is one-way: ages become 10-year buckets, dates keep only the
+  year, fine geography collapses, and names/IDs become unnumbered tokens —
+  no mapping exists anywhere.
 - **One install, one Hugging Face repo.** The package internally pulls the
   model weights it needs from one HF repo; you only ever reference one
   repo id.
 - **Text + visual** in one call, or text-only if you don't need the detector.
 - **CPU or GPU** — auto-selects CUDA if available, else CPU.
-- **Choose what to redact** — exclude any categories; everything is on by default.
+- **Choose what to process** — exclude any categories; everything is on by default.
 - Returns a structured **entity list** (`text`, `bbox`, `category`, …) and/or a
-  **redacted image**.
+  transformed image/string.
+
+> Note: anonymization here is best-effort removal/generalization of
+> *detected* identifiers. It is not a k-anonymity guarantee and not, by
+> itself, a compliance determination.
 
 ## Install
 
@@ -88,6 +101,39 @@ r.redact("Call John at john@x.com", mask="[{category}]")  # -> "Call [primary_su
 `TextPIIRedactor` runs a lightweight multilingual token classifier on raw text —
 no OCR, no image — and returns `TextPIISpan(category, start, end, l1, text, score)`
 with **character** offsets.
+
+### De-identify and anonymize
+
+Both modalities support all three modes:
+
+```python
+# --- Text ---
+r = TextPIIRedactor("ekacare/pii-redactors")
+
+result = r.deidentify("John Doe met Asha. Call John at +91 98765 43210.")
+result.text
+# -> "Person_1 met Person_2. Call Person_3 at Phone_1."
+result.mapping.to_dict()   # entity -> pseudonym map; store it securely to re-link.
+                            # Pass mapping=result.mapping on the next page/document
+                            # of the same record to keep numbering consistent.
+
+r.anonymize("Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka.")
+# -> "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."  (no mapping exists)
+
+# --- Image ---
+redactor = ImagePIIRedactor("ekacare/pii-redactors")
+
+deid = redactor.deidentify("page.jpg")   # ImageDeidResult
+deid.image.save("deidentified.png")      # pseudonyms rendered in place;
+                                          # faces/signatures become placeholders
+deid.mapping.to_dict()
+
+redactor.anonymize("page.jpg").save("anonymized.png")
+# generalized values rendered in place; faces/signatures filled solid black
+```
+
+De-identification consistency is per exact surface form (`"John Doe"` and a
+later bare `"John"` get different pseudonyms).
 
 ## API
 
@@ -176,9 +222,13 @@ docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 eka-pii-redaction
 
 Open `http://localhost:7860` for the UI. API endpoints: `GET /health`,
 `GET /entities`, `GET /entities-text`,
-`POST /detect` / `POST /redact` (multipart `file`, optional `exclude` query
-param, `mode`/`color` form fields for `/redact`), and
-`POST /detect-text` / `POST /redact-text` (JSON `{"text": ..., "exclude": [...]}`).
+`POST /detect` / `POST /redact` / `POST /anonymize` (multipart `file`,
+optional `exclude` query param, `mode`/`color` form fields for `/redact`),
+`POST /deidentify` (multipart `file` → JSON `{"image": <base64 png>,
+"mapping": ...}`), and `POST /detect-text` / `POST /redact-text` /
+`POST /deidentify-text` / `POST /anonymize-text`
+(JSON `{"text": ..., "exclude": [...]}`; `/deidentify-text` also accepts
+`"mapping"` from a prior call and returns the updated one).
 Env: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`, `EKA_PII_EXCLUDE`.
 
 ```bash

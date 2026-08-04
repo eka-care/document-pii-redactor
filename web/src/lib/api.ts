@@ -85,3 +85,58 @@ export async function detectText(text: string, exclude?: string[]): Promise<Text
   const data = await res.json()
   return data.spans as TextPIISpan[]
 }
+
+// label -> {pseudonym: original} plus per-label counters; opaque to the UI
+// beyond rendering the entries table.
+export interface PseudonymMapping {
+  entries: Record<string, Record<string, string>>
+  counters: Record<string, number>
+}
+
+async function postJson(path: string, body: unknown): Promise<any> {
+  const res = await assertOk(
+    await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  )
+  return res.json()
+}
+
+export async function redactText(text: string, exclude?: string[]): Promise<string> {
+  const data = await postJson('/redact-text', { text, exclude, mask: '[{category}]' })
+  return data.text
+}
+
+export async function deidentifyText(
+  text: string,
+  exclude?: string[],
+): Promise<{ text: string; mapping: PseudonymMapping }> {
+  return postJson('/deidentify-text', { text, exclude })
+}
+
+export async function anonymizeText(text: string, exclude?: string[]): Promise<string> {
+  const data = await postJson('/anonymize-text', { text, exclude })
+  return data.text
+}
+
+export async function deidentifyImage(
+  file: File,
+  exclude?: string[],
+): Promise<{ imageUrl: string; mapping: PseudonymMapping }> {
+  const form = new FormData()
+  form.append('file', file)
+  const qs = exclude?.length ? `?exclude=${encodeURIComponent(exclude.join(','))}` : ''
+  const res = await assertOk(await fetch(`/deidentify${qs}`, { method: 'POST', body: form }))
+  const data = await res.json()
+  return { imageUrl: `data:image/png;base64,${data.image}`, mapping: data.mapping }
+}
+
+export async function anonymizeImage(file: File, exclude?: string[]): Promise<Blob> {
+  const form = new FormData()
+  form.append('file', file)
+  const qs = exclude?.length ? `?exclude=${encodeURIComponent(exclude.join(','))}` : ''
+  const res = await assertOk(await fetch(`/anonymize${qs}`, { method: 'POST', body: form }))
+  return res.blob()
+}

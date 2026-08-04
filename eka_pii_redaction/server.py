@@ -6,6 +6,9 @@ Endpoints:
     GET  /entities                    -> {"text": [...], "visual": [...]}
     POST /detect  (multipart: file)   -> {"entities": [...]}
     POST /redact  (multipart: file, mode=solid|blur|pixelate) -> image/png
+    POST /deidentify (multipart: file) -> {"image": <base64 png>, "mapping": ...}
+    POST /anonymize  (multipart: file) -> image/png
+    POST /detect-text | /redact-text | /deidentify-text | /anonymize-text (JSON)
 
 Config via env vars (read at startup):
     EKA_PII_HF_REPO        Hugging Face repo id or local dir (default ekacare/pii-redactors)
@@ -50,6 +53,12 @@ class _RedactTextIn(BaseModel):
     text: str
     mask: str = "[REDACTED]"
     exclude: list[str] | None = None
+
+
+class _DeidTextIn(BaseModel):
+    text: str
+    exclude: list[str] | None = None
+    mapping: dict | None = None  # a prior call's mapping, to continue numbering
 
 
 def _get_text():
@@ -139,6 +148,47 @@ def detect_text(body: _TextIn):
 def redact_text(body: _RedactTextIn):
     text = _get_text().redact(body.text, mask=body.mask, exclude_entities=body.exclude)
     return {"text": text}
+
+
+@app.post("/deidentify-text")
+def deidentify_text(body: _DeidTextIn):
+    from .pseudonym import PseudonymMapping
+
+    result = _get_text().deidentify(
+        body.text, exclude_entities=body.exclude,
+        mapping=PseudonymMapping.from_dict(body.mapping),
+    )
+    return {"text": result.text, "mapping": result.mapping.to_dict()}
+
+
+@app.post("/anonymize-text")
+def anonymize_text(body: _TextIn):
+    return {"text": _get_text().anonymize(body.text, exclude_entities=body.exclude)}
+
+
+@app.post("/deidentify")
+async def deidentify(file: UploadFile = File(...), exclude: str | None = Query(None)):
+    # JSON (base64 PNG + mapping) rather than an image response — the mapping
+    # has to ride along with the image it de-identifies.
+    import base64
+
+    data = await file.read()
+    result = _get().deidentify(data, exclude_entities=_parse_exclude(exclude))
+    buf = io.BytesIO()
+    result.image.save(buf, format="PNG")
+    return JSONResponse({
+        "image": base64.b64encode(buf.getvalue()).decode("ascii"),
+        "mapping": result.mapping.to_dict(),
+    })
+
+
+@app.post("/anonymize")
+async def anonymize(file: UploadFile = File(...), exclude: str | None = Query(None)):
+    data = await file.read()
+    img = _get().anonymize(data, exclude_entities=_parse_exclude(exclude))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 # Serve the built React app (web/dist) at "/". Mounted last so it never shadows
