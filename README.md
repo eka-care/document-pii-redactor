@@ -25,9 +25,20 @@ QR/barcodes, face photos, fingerprints, logos) — behind a single class.
 
 ## Install
 
+From PyPI:
+
 ```bash
 pip install eka-pii-redaction          # core library
 pip install "eka-pii-redaction[server]"  # + FastAPI service
+```
+
+From source:
+
+```bash
+git clone https://github.com/eka-care/Eka-PII-redactors.git
+cd Eka-PII-redactors
+pip install -e .            # core library
+pip install -e ".[server]"  # + FastAPI service
 ```
 
 System dependency: **Tesseract OCR** (used for the text model).
