@@ -1,16 +1,18 @@
-// Ported from streamlit_app.py's L1_COLORS so the React demo and the
-// Streamlit tester stay visually consistent.
+// A muted "stamp ink" palette — one distinct ink per PII category group.
+// Deliberately desaturated relative to default chart colors so the set reads
+// as a designed classification system (like a records office's stamps)
+// rather than a rainbow. Same category keys as the model's taxonomy.
 export const L1_COLORS: Record<string, [number, number, number]> = {
-  person: [220, 38, 38],
-  location: [37, 99, 235],
-  date_time: [217, 119, 6],
-  contact: [5, 150, 105],
-  uid: [124, 58, 237],
-  device_net: [8, 145, 178],
-  credential: [190, 18, 60],
-  entity: [100, 116, 139],
-  biometric_visual: [219, 39, 119],
-  unknown: [75, 85, 99],
+  person: [161, 61, 61], // oxblood
+  location: [43, 91, 140], // denim
+  date_time: [150, 99, 28], // ochre
+  contact: [30, 107, 82], // pine
+  uid: [106, 63, 140], // plum
+  device_net: [32, 108, 116], // teal
+  credential: [140, 47, 73], // crimson
+  entity: [85, 86, 92], // graphite
+  biometric_visual: [161, 61, 116], // rose
+  unknown: [107, 106, 99], // stone
 }
 
 export function l1Rgb(group: string): string {

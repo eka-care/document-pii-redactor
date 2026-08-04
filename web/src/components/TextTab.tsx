@@ -62,34 +62,38 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
 
   return (
     <div className="tab-panel">
-      <p className="tab-caption">Detects PII in raw text and highlights each span (color-coded by group).</p>
+      <p className="tab-caption">Detects PII in raw text and highlights each span, color-coded by group.</p>
 
-      {entities && (
-        <details className="exclude-panel">
-          <summary>Exclude categories (never detect)</summary>
-          <div className="exclude-columns">
-            <div>
-              {entities.map((c) => (
-                <label key={c} className="checkbox-row">
-                  <input type="checkbox" checked={exclude.has(c)} onChange={() => toggle(c)} />
-                  {c}
-                </label>
-              ))}
+      <section className="card">
+        <h2 className="card-title">Input</h2>
+
+        {entities && (
+          <details className="exclude-panel">
+            <summary>Exclude categories (never detect)</summary>
+            <div className="exclude-columns">
+              <div>
+                {entities.map((c) => (
+                  <label key={c} className="checkbox-row">
+                    <input type="checkbox" checked={exclude.has(c)} onChange={() => toggle(c)} />
+                    {c}
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-        </details>
-      )}
+          </details>
+        )}
 
-      <textarea
-        className="text-input"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={10}
-      />
+        <textarea
+          className="text-input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={10}
+        />
 
-      <button type="button" className="primary-btn" onClick={run} disabled={!text.trim() || !ready || loading}>
-        {loading ? 'Detecting…' : 'Detect PII'}
-      </button>
+        <button type="button" className="primary-btn" onClick={run} disabled={!text.trim() || !ready || loading}>
+          {loading ? 'Detecting…' : 'Detect PII'}
+        </button>
+      </section>
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -97,32 +101,44 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
         <>
           {spans.length > 0 ? (
             <>
-              <Legend groups={groups} />
-              <div className="highlighted-text">{renderHighlighted(text, spans)}</div>
-              <table className="entity-table">
-                <thead>
-                  <tr>
-                    <th>category</th>
-                    <th>l1</th>
-                    <th>text</th>
-                    <th>start</th>
-                    <th>end</th>
-                    <th>score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {spans.map((s, i) => (
-                    <tr key={i}>
-                      <td>{s.category}</td>
-                      <td>{s.l1}</td>
-                      <td>{s.text}</td>
-                      <td>{s.start}</td>
-                      <td>{s.end}</td>
-                      <td>{s.score != null ? s.score.toFixed(3) : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <section className="card">
+                <h2 className="card-title">Highlighted</h2>
+                <Legend groups={groups} />
+                <div className="highlighted-text">{renderHighlighted(text, spans)}</div>
+              </section>
+
+              <section className="card">
+                <h2 className="card-title">Detected spans</h2>
+                <div className="table-scroll">
+                  <table className="entity-table">
+                    <thead>
+                      <tr>
+                        <th>category</th>
+                        <th>l1</th>
+                        <th>text</th>
+                        <th>start</th>
+                        <th>end</th>
+                        <th>score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {spans.map((s, i) => (
+                        <tr key={i}>
+                          <td>{s.category}</td>
+                          <td>
+                            <span className="l1-dot" style={{ background: l1Rgb(s.l1) }} />
+                            {s.l1}
+                          </td>
+                          <td>{s.text}</td>
+                          <td>{s.start}</td>
+                          <td>{s.end}</td>
+                          <td>{s.score != null ? s.score.toFixed(3) : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </>
           ) : (
             <p className="tab-caption">No PII detected.</p>

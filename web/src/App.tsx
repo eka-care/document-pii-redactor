@@ -48,26 +48,45 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🛡️ Eka PII Redactor</h1>
-        <p className="subtitle">
-          {ready ? `Models ready · device=${device}` : 'Waking up the model… this can take a minute on the first request.'}
-        </p>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          <div>
+            <h1 className="brand-title">Eka PII Redactor</h1>
+            <p className="subtitle">Detect and redact PII in documents and plain text</p>
+          </div>
+        </div>
+        <div className={`status-pill ${ready ? 'is-ready' : 'is-loading'}`} role="status">
+          <span className="status-dot" />
+          {ready ? `Ready · ${device}` : 'Waking up the model…'}
+        </div>
       </header>
 
-      <nav className="tabs">
-        <button className={tab === 'image' ? 'tab active' : 'tab'} onClick={() => setTab('image')}>
-          🖼️ Image
+      <nav className="tabs" role="tablist" aria-label="Redaction modality">
+        <button
+          role="tab"
+          aria-selected={tab === 'image'}
+          className={tab === 'image' ? 'tab active' : 'tab'}
+          onClick={() => setTab('image')}
+        >
+          Image
         </button>
-        <button className={tab === 'text' ? 'tab active' : 'tab'} onClick={() => setTab('text')}>
-          📝 Text
+        <button
+          role="tab"
+          aria-selected={tab === 'text'}
+          className={tab === 'text' ? 'tab active' : 'tab'}
+          onClick={() => setTab('text')}
+        >
+          Text
         </button>
       </nav>
 
-      {tab === 'image' ? (
-        <ImageTab entities={taxonomy} ready={ready} />
-      ) : (
-        <TextTab entities={textEntities} ready={ready} />
-      )}
+      <main>
+        {tab === 'image' ? (
+          <ImageTab entities={taxonomy} ready={ready} />
+        ) : (
+          <TextTab entities={textEntities} ready={ready} />
+        )}
+      </main>
     </div>
   )
 }

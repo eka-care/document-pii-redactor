@@ -131,78 +131,90 @@ export default function ImageTab({
     <div className="tab-panel">
       <p className="tab-caption">Upload a document image — it will be detected and redacted.</p>
 
-      <div className="samples-row">
-        {SAMPLE_IMAGES.map((s) => (
-          <button
-            key={s.src}
-            type="button"
-            className="sample-thumb"
-            onClick={() => pickSample(s.src, s.name)}
-            disabled={!ready}
-          >
-            <img src={s.src} alt={s.name} onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')} />
-            <span>{s.name}</span>
-          </button>
-        ))}
-        <label className="upload-btn">
-          Upload image
-          <input type="file" accept={ACCEPTED_TYPES.join(',')} onChange={onFileInput} hidden />
-        </label>
-      </div>
-
-      <div className="controls-row">
-        <label>
-          Redaction mode
-          <select value={mode} onChange={(e) => setMode(e.target.value as RedactMode)}>
-            <option value="solid">solid</option>
-            <option value="blur">blur</option>
-            <option value="pixelate">pixelate</option>
-          </select>
-        </label>
-        <label>
-          Fill color
-          <input
-            type="color"
-            value={color}
-            disabled={mode !== 'solid'}
-            onChange={(e) => setColor(e.target.value)}
-          />
-        </label>
-      </div>
-
-      {taxonomy && (
-        <details className="exclude-panel">
-          <summary>Exclude categories (never detect/redact)</summary>
-          <div className="exclude-columns">
-            <div>
-              <h4>Text</h4>
-              {taxonomy.text.map((c) => (
-                <label key={c} className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={excludeText.has(c)}
-                    onChange={() => toggle(excludeText, setExcludeText, c)}
-                  />
-                  {c}
-                </label>
-              ))}
-            </div>
-            <div>
-              <h4>Visual</h4>
-              {taxonomy.visual.map((c) => (
-                <label key={c} className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={excludeVisual.has(c)}
-                    onChange={() => toggle(excludeVisual, setExcludeVisual, c)}
-                  />
-                  {c}
-                </label>
-              ))}
-            </div>
+      <div className="panel-grid">
+        <section className="card">
+          <h2 className="card-title">Source</h2>
+          <div className="samples-row">
+            {SAMPLE_IMAGES.map((s) => (
+              <button
+                key={s.src}
+                type="button"
+                className="sample-thumb"
+                onClick={() => pickSample(s.src, s.name)}
+                disabled={!ready}
+              >
+                <img
+                  src={s.src}
+                  alt={s.name}
+                  onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')}
+                />
+                <span>{s.name}</span>
+              </button>
+            ))}
+            <label className="upload-btn">
+              Upload image
+              <input type="file" accept={ACCEPTED_TYPES.join(',')} onChange={onFileInput} hidden />
+            </label>
           </div>
-        </details>
-      )}
+        </section>
+
+        <section className="card">
+          <h2 className="card-title">Options</h2>
+          <div className="controls-row">
+            <label className="field">
+              <span className="field-label">Redaction mode</span>
+              <select value={mode} onChange={(e) => setMode(e.target.value as RedactMode)}>
+                <option value="solid">solid</option>
+                <option value="blur">blur</option>
+                <option value="pixelate">pixelate</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">Fill color</span>
+              <input
+                type="color"
+                value={color}
+                disabled={mode !== 'solid'}
+                onChange={(e) => setColor(e.target.value)}
+              />
+            </label>
+          </div>
+
+          {taxonomy && (
+            <details className="exclude-panel">
+              <summary>Exclude categories (never detect/redact)</summary>
+              <div className="exclude-columns">
+                <div>
+                  <h3 className="exclude-heading">Text</h3>
+                  {taxonomy.text.map((c) => (
+                    <label key={c} className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={excludeText.has(c)}
+                        onChange={() => toggle(excludeText, setExcludeText, c)}
+                      />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+                <div>
+                  <h3 className="exclude-heading">Visual</h3>
+                  {taxonomy.visual.map((c) => (
+                    <label key={c} className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={excludeVisual.has(c)}
+                        onChange={() => toggle(excludeVisual, setExcludeVisual, c)}
+                      />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </details>
+          )}
+        </section>
+      </div>
 
       <button type="button" className="primary-btn" onClick={run} disabled={!file || !ready || loading}>
         {loading ? 'Detecting…' : 'Detect & Redact'}
@@ -214,47 +226,55 @@ export default function ImageTab({
 
       {previewUrl && (
         <div className="results-row">
-          <div>
-            <p className="tab-caption">Detections</p>
+          <section className="card">
+            <h2 className="card-title">Detections</h2>
             <canvas ref={canvasRef} className="result-image" />
-          </div>
+          </section>
           {redactedUrl && (
-            <div>
-              <p className="tab-caption">Redacted ({mode})</p>
+            <section className="card">
+              <h2 className="card-title">Redacted &middot; {mode}</h2>
               <img src={redactedUrl} alt="Redacted result" className="result-image" />
-              <a className="primary-btn download-btn" href={redactedUrl} download="redacted.png">
+              <a className="btn-secondary download-btn" href={redactedUrl} download="redacted.png">
                 Download redacted PNG
               </a>
-            </div>
+            </section>
           )}
         </div>
       )}
 
       {detectedEntities.length > 0 && (
-        <table className="entity-table">
-          <thead>
-            <tr>
-              <th>kind</th>
-              <th>category</th>
-              <th>l1</th>
-              <th>text</th>
-              <th>score</th>
-              <th>bbox</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detectedEntities.map((e, i) => (
-              <tr key={i}>
-                <td>{e.kind}</td>
-                <td>{e.category}</td>
-                <td>{e.l1}</td>
-                <td>{e.text ?? ''}</td>
-                <td>{e.score != null ? e.score.toFixed(3) : ''}</td>
-                <td>{e.bbox.join(', ')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <section className="card">
+          <h2 className="card-title">Detected entities</h2>
+          <div className="table-scroll">
+            <table className="entity-table">
+              <thead>
+                <tr>
+                  <th>kind</th>
+                  <th>category</th>
+                  <th>l1</th>
+                  <th>text</th>
+                  <th>score</th>
+                  <th>bbox</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detectedEntities.map((e, i) => (
+                  <tr key={i}>
+                    <td>{e.kind}</td>
+                    <td>{e.category}</td>
+                    <td>
+                      <span className="l1-dot" style={{ background: l1Rgb(e.l1) }} />
+                      {e.l1}
+                    </td>
+                    <td>{e.text ?? ''}</td>
+                    <td>{e.score != null ? e.score.toFixed(3) : ''}</td>
+                    <td>{e.bbox.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
     </div>
   )
