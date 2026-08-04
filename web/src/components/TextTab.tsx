@@ -153,8 +153,8 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
             <select value={action} onChange={(e) => setAction(e.target.value as Action)}>
               <option value="detect">Detect (highlight)</option>
               <option value="redact">Redact</option>
-              <option value="deidentify">De-identify</option>
               <option value="anonymize">Anonymize</option>
+              <option value="deidentify">De-identify</option>
             </select>
           </label>
           <button type="button" className="primary-btn" onClick={run} disabled={!text.trim() || !ready || loading}>

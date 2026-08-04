@@ -200,8 +200,8 @@ export default function ImageTab({
               <span className="field-label">Action</span>
               <select value={action} onChange={(e) => setAction(e.target.value as Action)}>
                 <option value="redact">Redact</option>
-                <option value="deidentify">De-identify</option>
                 <option value="anonymize">Anonymize</option>
+                <option value="deidentify">De-identify</option>
               </select>
             </label>
             {action === 'redact' && (

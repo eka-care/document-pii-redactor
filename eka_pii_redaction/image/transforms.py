@@ -2,14 +2,17 @@
 
 The detector emits one entity per OCR word (see layoutlmv3.py), but pseudonym
 consistency needs logical entities — "John Doe" must become one "Person_1",
-not "Person_1 Person_1". `group_text_entities` merges same-category words that
-sit on one line within a small horizontal gap; the substitute value is then
-rendered into the merged box over a background-colored fill. The result
-intentionally looks patched — edits should be detectable.
+not "Person_1 Person_1". Words are grouped three ways: into visual lines
+(tolerant of mixed OCR box heights), into same-line runs per category, and
+finally into blocks — same-category runs on tightly stacked consecutive lines
+(a header's multi-line qualification list) merge into one region. Substitute
+values are rendered over a background-colored fill at the size of the
+original words (not the union box), so labels sit naturally beside the
+surrounding print. The result still reads as edited — by design.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -19,13 +22,17 @@ from ..pseudonym import PseudonymMapping
 from ..text.transforms import anonymize_value
 
 # Line clustering: a word joins a line when its vertical center is within
-# this fraction of the line's height from the line's center — tolerant of the
-# mixed box heights real headers produce. Words merge when the horizontal gap
-# is under _MAX_GAP_FACTOR x line height; generous on purpose, because an
-# under-merged run renders as pseudonym confetti (Address_1 ... Address_9)
-# while an over-merged one just erases a slightly larger area.
+# this fraction of the line's height from the line's center. Same-line words
+# merge when the horizontal gap is under _MAX_GAP_FACTOR x line height —
+# generous on purpose, because an under-merged run renders as pseudonym
+# confetti while an over-merged one just erases a slightly larger area.
 _LINE_CENTER_TOLERANCE = 0.6
 _MAX_GAP_FACTOR = 1.5
+# Block merge: same-category groups on consecutive lines join when the
+# vertical gap is under this fraction of the text height and they overlap
+# horizontally. Tight enough that table rows (padded apart) stay separate.
+_MAX_BLOCK_GAP_FACTOR = 0.7
+_MIN_BLOCK_X_OVERLAP = 0.5
 
 # Placeholder labels for visual-only entities under de-identification — the
 # reader should know something was there without seeing it. Anonymization
@@ -44,6 +51,16 @@ class EntityGroup:
     category: str
     bbox: tuple[int, int, int, int]
     text: str
+    word_heights: list[int] = field(default_factory=list)
+
+    @property
+    def type_height(self) -> int:
+        """Median height of the member words — the size the original text was
+        actually printed at, unlike the union bbox which grows on merges."""
+        if not self.word_heights:
+            return self.bbox[3] - self.bbox[1]
+        ordered = sorted(self.word_heights)
+        return ordered[len(ordered) // 2]
 
 
 @dataclass
@@ -81,15 +98,48 @@ def _cluster_lines(words: list[PIIEntity]) -> list[list[PIIEntity]]:
     return [sorted(lines[i], key=lambda e: e.bbox[0]) for i in order]
 
 
-def group_text_entities(entities: list[PIIEntity]) -> list[EntityGroup]:
-    """Merge same-line, same-category word runs into logical entities.
+def _merge_blocks(groups: list[EntityGroup]) -> list[EntityGroup]:
+    """Merge same-category groups stacked on tightly consecutive lines.
 
-    Words are first clustered into visual lines (mixed OCR box heights on one
+    A multi-line run (a header's qualification list, a wrapped address) reads
+    as ONE entity; without this it renders as a column of numbered labels.
+    Groups arrive in reading order, so each new group only needs to check the
+    blocks already kept. Table rows don't merge — their row padding exceeds
+    the gap threshold.
+    """
+    merged: list[EntityGroup] = []
+    for g in groups:
+        target = None
+        for m in merged:
+            if m.category != g.category:
+                continue
+            h = min(m.type_height, g.type_height)
+            gap = g.bbox[1] - m.bbox[3]
+            x_overlap = min(m.bbox[2], g.bbox[2]) - max(m.bbox[0], g.bbox[0])
+            min_width = min(m.bbox[2] - m.bbox[0], g.bbox[2] - g.bbox[0])
+            if (-0.3 * h <= gap <= _MAX_BLOCK_GAP_FACTOR * h
+                    and x_overlap >= _MIN_BLOCK_X_OVERLAP * min_width):
+                target = m
+                break
+        if target is None:
+            merged.append(g)
+        else:
+            target.bbox = (min(target.bbox[0], g.bbox[0]), min(target.bbox[1], g.bbox[1]),
+                           max(target.bbox[2], g.bbox[2]), max(target.bbox[3], g.bbox[3]))
+            target.text = f"{target.text} {g.text}".strip()
+            target.word_heights.extend(g.word_heights)
+    return merged
+
+
+def group_text_entities(entities: list[PIIEntity]) -> list[EntityGroup]:
+    """Merge word runs into logical entities; groups return in reading order.
+
+    Words are clustered into visual lines (mixed OCR box heights on one
     printed line must not break a name apart), then walked left-to-right: a
     word extends its category's open group when the horizontal gap is within
     _MAX_GAP_FACTOR x line height, even across interleaved words of other
-    categories. Groups come back in reading order. Visual entities are not
-    grouped.
+    categories. Same-category groups on tightly stacked lines then merge
+    into blocks. Visual entities are not grouped.
     """
     words = [e for e in entities if e.kind == "text"]
     groups: list[EntityGroup] = []
@@ -103,12 +153,14 @@ def group_text_entities(entities: list[PIIEntity]) -> list[EntityGroup]:
                 prev.bbox = (min(prev.bbox[0], x0), min(prev.bbox[1], y0),
                              max(prev.bbox[2], x1), max(prev.bbox[3], y1))
                 prev.text = f"{prev.text} {w.text or ''}".strip()
+                prev.word_heights.append(y1 - y0)
                 continue
             group = EntityGroup(category=w.category, bbox=(x0, y0, x1, y1),
-                                text=(w.text or "").strip())
+                                text=(w.text or "").strip(),
+                                word_heights=[y1 - y0])
             groups.append(group)
             open_by_category[w.category] = group
-    return groups
+    return _merge_blocks(groups)
 
 
 # ---------------------------------------------------------------- render --- #
@@ -138,8 +190,10 @@ def _load_font(size: int):
         return ImageFont.load_default()
 
 
-def _fitted_font(draw: ImageDraw.ImageDraw, text: str, box_w: int, box_h: int):
-    size = max(8, int(box_h * 0.75))
+def _fitted_font(draw: ImageDraw.ImageDraw, text: str, box_w: int,
+                 start_height: int):
+    """Font sized to match print of `start_height`, shrunk to fit box_w."""
+    size = max(8, int(start_height * 0.9))
     font = _load_font(size)
     while size > 8 and draw.textlength(text, font=font) > box_w:
         size -= 1
@@ -164,17 +218,33 @@ def erase_box(img: Image.Image, bbox: tuple) -> tuple[int, int, int]:
 
 
 def draw_label_in_box(img: Image.Image, bbox: tuple, replacement: str,
-                      bg: tuple[int, int, int]) -> None:
-    """Draw `replacement` inside the box, sized to fit, black/white by bg."""
+                      bg: tuple[int, int, int],
+                      type_height: int | None = None) -> None:
+    """Draw `replacement` in the box at the original text's size.
+
+    `type_height` is the group's median word height — using it instead of the
+    union box height keeps labels the same visual size as neighboring print
+    even when the erased region is much taller (merged blocks).
+    """
     draw = ImageDraw.Draw(img)
     x0, y0, x1, y1 = bbox
     luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
     ink = (20, 20, 20) if luminance > 140 else (245, 245, 245)
-    font = _fitted_font(draw, replacement, max(1, x1 - x0 - 2), max(1, y1 - y0))
-    top = draw.textbbox((0, 0), replacement, font=font)
-    text_h = top[3] - top[1]
-    draw.text((x0 + 1, y0 + max(0, ((y1 - y0) - text_h) // 2) - top[1]),
-              replacement, fill=ink, font=font)
+    height = min(type_height or (y1 - y0), y1 - y0)
+    font = _fitted_font(draw, replacement, max(1, x1 - x0 - 2), max(1, height))
+    if (y1 - y0) <= 1.6 * height:
+        # Single-line region: sit the label on the original baseline (OCR
+        # boxes include descender space, so the baseline is a bit above the
+        # bottom edge). Centering instead reads as superscript next to the
+        # surrounding print.
+        draw.text((x0 + 1, y1 - max(1, int(0.18 * height))),
+                  replacement, fill=ink, font=font, anchor="ls")
+    else:
+        # Merged multi-line block: vertical center is the natural placement.
+        top = draw.textbbox((0, 0), replacement, font=font)
+        text_h = top[3] - top[1]
+        draw.text((x0 + 1, y0 + max(0, ((y1 - y0) - text_h) // 2) - top[1]),
+                  replacement, fill=ink, font=font)
 
 
 def render_text_in_box(img: Image.Image, bbox: tuple, replacement: str) -> None:
@@ -182,11 +252,14 @@ def render_text_in_box(img: Image.Image, bbox: tuple, replacement: str) -> None:
     draw_label_in_box(img, bbox, replacement, erase_box(img, bbox))
 
 
-def render_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> None:
-    """Neutral gray fill + centered category label (de-identification only)."""
+def fill_visual_placeholder(img: Image.Image, bbox: tuple) -> None:
+    draw = ImageDraw.Draw(img)
+    draw.rectangle(list(bbox), fill=(232, 232, 232), outline=(180, 180, 180))
+
+
+def label_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> None:
     draw = ImageDraw.Draw(img)
     x0, y0, x1, y1 = bbox
-    draw.rectangle([x0, y0, x1, y1], fill=(232, 232, 232), outline=(180, 180, 180))
     label = VISUAL_PLACEHOLDER_LABELS.get(category, "[REMOVED]")
     font = _fitted_font(draw, label, max(1, x1 - x0 - 4), max(1, (y1 - y0) // 3))
     tb = draw.textbbox((0, 0), label, font=font)
@@ -195,35 +268,45 @@ def render_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> N
               label, fill=(120, 120, 120), font=font)
 
 
+def render_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> None:
+    """Neutral gray fill + centered category label (de-identification only)."""
+    fill_visual_placeholder(img, bbox)
+    label_visual_placeholder(img, bbox, category)
+
+
 # -------------------------------------------------------------- appliers --- #
-def _apply_text_replacements(out: Image.Image, groups: list[EntityGroup],
-                             substitute) -> None:
-    """Two passes — erase every box first, then draw every label — so a merged
-    box that overlaps a neighbor cannot wipe out its already-drawn label."""
-    backgrounds = [erase_box(out, g.bbox) for g in groups]
-    for g, bg in zip(groups, backgrounds):
-        draw_label_in_box(out, g.bbox, substitute(g), bg)
-
-
 def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
                      mapping: PseudonymMapping) -> Image.Image:
+    # Strict fill-then-label ordering across BOTH kinds: any fill drawn after
+    # a label can wipe it (a large [LOGO] placeholder once erased half of the
+    # brand pseudonyms drawn next to it).
     out = img.convert("RGB").copy()
-    _apply_text_replacements(
-        out, group_text_entities(entities),
-        lambda g: mapping.pseudonym_for(g.category, g.text))
-    for e in entities:
-        if e.kind == "visual":
-            render_visual_placeholder(out, e.bbox, e.category)
+    groups = group_text_entities(entities)
+    visuals = [e for e in entities if e.kind == "visual"]
+
+    backgrounds = [erase_box(out, g.bbox) for g in groups]
+    for v in visuals:
+        fill_visual_placeholder(out, v.bbox)
+
+    for g, bg in zip(groups, backgrounds):
+        draw_label_in_box(out, g.bbox, mapping.pseudonym_for(g.category, g.text),
+                          bg, type_height=g.type_height)
+    for v in visuals:
+        label_visual_placeholder(out, v.bbox, v.category)
     return out
 
 
 def apply_anonymize(img: Image.Image, entities: list[PIIEntity]) -> Image.Image:
     out = img.convert("RGB").copy()
-    _apply_text_replacements(
-        out, group_text_entities(entities),
-        lambda g: anonymize_value(g.category, g.text))
+    groups = group_text_entities(entities)
+    visuals = [e for e in entities if e.kind == "visual"]
+
+    backgrounds = [erase_box(out, g.bbox) for g in groups]
     draw = ImageDraw.Draw(out)
-    for e in entities:
-        if e.kind == "visual":
-            draw.rectangle(list(e.bbox), fill=(0, 0, 0))
+    for v in visuals:
+        draw.rectangle(list(v.bbox), fill=(0, 0, 0))
+
+    for g, bg in zip(groups, backgrounds):
+        draw_label_in_box(out, g.bbox, anonymize_value(g.category, g.text),
+                          bg, type_height=g.type_height)
     return out
