@@ -1,3 +1,13 @@
+---
+title: Eka PII Redactor
+emoji: 🛡️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Eka-PII-redaction
 
 Detect and redact **PII in document images** — both **text** PII (names, addresses,
@@ -122,30 +132,35 @@ All selectable categories.
 
 ## Run as a container
 
-The image bundles torch+CUDA, Tesseract, and the FastAPI service. Same image runs
-on GPU or CPU.
+The image bundles torch+CUDA, Tesseract, the FastAPI service, and the React
+demo UI (`web/`, built at image-build time and served by the same process at
+`/`). Same image runs on GPU or CPU. This is also what runs on the
+[`ekacare/pii-redactor-demo`](https://huggingface.co/spaces/ekacare/pii-redactor-demo)
+HF Space.
 
 ```bash
 docker build -t eka-pii-redaction .
 
 # GPU
-docker run --gpus all -p 8080:8080 \
+docker run --gpus all -p 7860:7860 \
   -e EKA_PII_HF_REPO=ekacare/pii-redactors \
   -v $HOME/.cache/huggingface:/root/.cache/huggingface \
   eka-pii-redaction
 
 # CPU
-docker run -e EKA_PII_DEVICE=cpu -p 8080:8080 eka-pii-redaction
+docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 eka-pii-redaction
 ```
 
-Endpoints: `GET /health`, `GET /entities`, `GET /entities-text`,
-`POST /detect` / `POST /redact` (multipart `file`), and
-`POST /detect-text` / `POST /redact-text` (JSON `{"text": ...}`).
+Open `http://localhost:7860` for the UI. API endpoints: `GET /health`,
+`GET /entities`, `GET /entities-text`,
+`POST /detect` / `POST /redact` (multipart `file`, optional `exclude` query
+param, `mode`/`color` form fields for `/redact`), and
+`POST /detect-text` / `POST /redact-text` (JSON `{"text": ..., "exclude": [...]}`).
 Env: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`, `EKA_PII_EXCLUDE`.
 
 ```bash
-curl -F file=@page.jpg http://localhost:8080/detect
-curl -F file=@page.jpg -F mode=blur http://localhost:8080/redact -o redacted.png
+curl -F file=@page.jpg http://localhost:7860/detect
+curl -F file=@page.jpg -F mode=blur http://localhost:7860/redact -o redacted.png
 ```
 
 ## Structure (by modality)
@@ -174,6 +189,31 @@ The single model repo mirrors this:
 
 Both modalities share the category taxonomy (`eka_pii_redaction.taxonomy`); the
 text model also detects `mac_address` (device_net).
+
+## Deploying the demo to HF Spaces
+
+The Space (`ekacare/pii-redactor-demo`) runs this same repo's Docker image — see
+the "Run as a container" section above. To (re)deploy:
+
+1. Create the Space once, as **private** (matches the model's current
+   visibility — flip both to public together later):
+   ```bash
+   huggingface-cli repo create pii-redactor-demo --organization ekacare \
+     --type space --space_sdk docker --private
+   ```
+   (or via the HF UI: New Space → owner `ekacare` → SDK `Docker` → Private.)
+2. Add the model's read token as a Space secret: Space → Settings →
+   **Repository secrets** → add `HF_TOKEN`. The server already reads it via
+   `huggingface_hub`'s standard auth — no code change needed.
+3. Push this repo to the Space's git remote:
+   ```bash
+   git remote add space https://huggingface.co/spaces/ekacare/pii-redactor-demo
+   git push space add-streamlit-tester:main   # or whichever branch is ready
+   ```
+4. Watch the build under the Space's "Logs" tab. The base image
+   (`pytorch/pytorch:...-cuda12.1-cudnn9-runtime`) is large, so the first
+   build can take a while; subsequent pushes reuse Docker layer caching.
+5. Once it shows **Running**, open the Space URL and click through both tabs.
 
 ## Publishing the model weights
 

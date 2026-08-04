@@ -17,7 +17,9 @@ dependencies = [
     # The published weights are serialized with transformers 5.x (nested
     # processor_config.json + new tokenizer.json format). transformers 4.x
     # cannot load them, so require 5.x. (5.x needs Python >=3.10, matching
-    # requires-python above.)
+    # requires-python above.) Also needs a recent torch (see Dockerfile base
+    # image comment) — transformers 5.x imports torch APIs (DTensor,
+    # float8_e8m0fnu) that don't exist in older torch releases.
     "transformers>=5.0",
     "huggingface_hub>=0.23",
     # XLM-R tokenizer backing the text MiniLM model (fast path loads from

@@ -9,3 +9,5 @@ venv/
 hf_repo/
 redacted*.png
 *.pt
+web/node_modules/
+web/dist/
