@@ -265,7 +265,10 @@ def _bucket_em_sizes(groups: list[EntityGroup]) -> list[int]:
     sizes = []
     for g in groups:
         ratio = g.type_height / body if body else 1.0
-        bucket = 0.8 if ratio < 0.75 else (1.6 if ratio > 1.5 else 1.0)
+        # OCR box heights vary ~±25% line to line (ascenders/descenders), so
+        # the body bucket is wide: only genuinely tiny print (footer fine
+        # print) goes small, only headline-scale text goes large.
+        bucket = 0.8 if ratio < 0.55 else (1.6 if ratio > 1.5 else 1.0)
         sizes.append(max(8, int(1.2 * bucket * body)))
     return sizes
 
@@ -344,6 +347,95 @@ def render_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> N
     label_visual_placeholder(img, bbox, category)
 
 
+def _group_line_clusters(groups: list[EntityGroup]) -> list[list[int]]:
+    """Cluster group indices into visual lines (top-to-bottom, left-to-right)."""
+    idxs = sorted(range(len(groups)),
+                  key=lambda i: ((groups[i].bbox[1] + groups[i].bbox[3]) / 2,
+                                 groups[i].bbox[0]))
+    lines: list[list[int]] = []
+    spans: list[tuple[int, int]] = []
+    for i in idxs:
+        y0, y1 = groups[i].bbox[1], groups[i].bbox[3]
+        for j, (ly0, ly1) in enumerate(spans):
+            overlap = min(y1, ly1) - max(y0, ly0)
+            if overlap >= 0.3 * min(y1 - y0, ly1 - ly0):
+                lines[j].append(i)
+                spans[j] = (min(ly0, y0), max(ly1, y1))
+                break
+        else:
+            lines.append([i])
+            spans.append((y0, y1))
+    for line in lines:
+        line.sort(key=lambda i: groups[i].bbox[0])
+    return lines
+
+
+def _content_limit(img: Image.Image, y0: int, y1: int, x_from: int, x_to: int,
+                   bg: tuple[int, int, int]) -> int:
+    """First x in [x_from, x_to] where non-background content starts.
+
+    Labels may extend past their erased box into empty space, but must stop
+    where real (un-erased) print begins.
+    """
+    x_to = min(x_to, img.width)
+    y1 = min(y1, img.height)
+    if x_to <= x_from or y1 <= y0:
+        return x_from
+    strip = np.asarray(img.crop((x_from, y0, x_to, y1)), dtype=int)
+    diff = np.abs(strip[:, :, :3] - np.array(bg[:3])).max(axis=2) > 30
+    col_fraction = diff.mean(axis=0)
+    hits = np.where(col_fraction > 0.12)[0]
+    return x_from + (int(hits[0]) if len(hits) else strip.shape[1])
+
+
+def _draw_labels(out: Image.Image, groups: list[EntityGroup],
+                 backgrounds: list[tuple[int, int, int]], sizes: list[int],
+                 substitute) -> None:
+    """Draw every label at its bucket size, reflowing within each line.
+
+    A replacement label is often wider than the word it replaces
+    ("Gender_1" vs "female,"). Rather than shrinking to the original box —
+    which broke size uniformity — each line lays labels out left-to-right:
+    a label starts at its own box (or after the previous label), extends
+    into empty space, and only shrinks when actual un-erased content is in
+    the way. Iteration order stays reading order, so pseudonym numbering is
+    unaffected.
+    """
+    draw = ImageDraw.Draw(out)
+    for line in _group_line_clusters(groups):
+        cursor = 0
+        for i in line:
+            g, bg, em = groups[i], backgrounds[i], sizes[i]
+            text = substitute(g)
+            x0, y0, x1, y1 = g.bbox
+            luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
+            ink = (20, 20, 20) if luminance > 140 else (245, 245, 245)
+
+            start_x = max(x0, cursor)
+            font = _load_font(em)
+            width = draw.textlength(text, font=font)
+            erased_end = _padded(g.bbox, out)[2]
+            scan_from = max(erased_end, start_x)
+            limit = _content_limit(out, y0, y1, scan_from,
+                                   int(start_x + width + 8), bg)
+            avail = max(8, limit - start_x - 2)
+            if width > avail:
+                font = _fitted_font(draw, text, avail, em)
+                width = draw.textlength(text, font=font)
+
+            if (y1 - y0) <= 1.6 * g.type_height:
+                # Single-line: sit on the original baseline (OCR boxes include
+                # descender space; centering reads as superscript).
+                draw.text((start_x + 1, y1 - max(1, int(0.18 * g.type_height))),
+                          text, fill=ink, font=font, anchor="ls")
+            else:
+                tb = draw.textbbox((0, 0), text, font=font)
+                text_h = tb[3] - tb[1]
+                draw.text((start_x + 1, y0 + max(0, ((y1 - y0) - text_h) // 2) - tb[1]),
+                          text, fill=ink, font=font)
+            cursor = int(start_x + width + max(6, em // 3))
+
+
 # -------------------------------------------------------------- appliers --- #
 def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
                      mapping: PseudonymMapping) -> Image.Image:
@@ -359,9 +451,8 @@ def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
     for v in visuals:
         fill_visual_placeholder(out, v.bbox)
 
-    for g, bg, em in zip(groups, backgrounds, sizes):
-        draw_label_in_box(out, g.bbox, mapping.pseudonym_for(g.category, g.text),
-                          bg, type_height=g.type_height, em_size=em)
+    _draw_labels(out, groups, backgrounds, sizes,
+                 lambda g: mapping.pseudonym_for(g.category, g.text))
     for v in visuals:
         label_visual_placeholder(out, v.bbox, v.category)
     return out
@@ -378,7 +469,6 @@ def apply_anonymize(img: Image.Image, entities: list[PIIEntity]) -> Image.Image:
     for v in visuals:
         draw.rectangle(list(v.bbox), fill=(0, 0, 0))
 
-    for g, bg, em in zip(groups, backgrounds, sizes):
-        draw_label_in_box(out, g.bbox, anonymize_value(g.category, g.text),
-                          bg, type_height=g.type_height, em_size=em)
+    _draw_labels(out, groups, backgrounds, sizes,
+                 lambda g: anonymize_value(g.category, g.text))
     return out
