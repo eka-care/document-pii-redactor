@@ -18,11 +18,14 @@ from ..entities import PIIEntity
 from ..pseudonym import PseudonymMapping
 from ..text.transforms import anonymize_value
 
-# Two boxes are "same line" if they overlap vertically by at least half the
-# shorter box; words merge when the horizontal gap is under this fraction of
-# the line height (typical inter-word gaps are ~0.25-0.5x height).
-_MIN_VERTICAL_OVERLAP = 0.5
-_MAX_GAP_FACTOR = 0.6
+# Line clustering: a word joins a line when its vertical center is within
+# this fraction of the line's height from the line's center — tolerant of the
+# mixed box heights real headers produce. Words merge when the horizontal gap
+# is under _MAX_GAP_FACTOR x line height; generous on purpose, because an
+# under-merged run renders as pseudonym confetti (Address_1 ... Address_9)
+# while an over-merged one just erases a slightly larger area.
+_LINE_CENTER_TOLERANCE = 0.6
+_MAX_GAP_FACTOR = 1.5
 
 # Placeholder labels for visual-only entities under de-identification — the
 # reader should know something was there without seeing it. Anonymization
@@ -50,40 +53,61 @@ class ImageDeidResult:
     mapping: PseudonymMapping
 
 
-def _same_line(a: tuple, b: tuple) -> bool:
-    overlap = min(a[3], b[3]) - max(a[1], b[1])
-    shorter = min(a[3] - a[1], b[3] - b[1])
-    return shorter > 0 and overlap >= _MIN_VERTICAL_OVERLAP * shorter
+def _cluster_lines(words: list[PIIEntity]) -> list[list[PIIEntity]]:
+    """Bucket words into visual lines, tolerant of mixed box heights.
+
+    A word joins an existing line when its vertical center is close to the
+    line's running center (relative to the taller of the two heights).
+    Returns lines top-to-bottom, each line's words left-to-right — reading
+    order, which also makes pseudonym numbering follow reading order.
+    """
+    lines: list[list[PIIEntity]] = []
+    centers: list[float] = []
+    heights: list[float] = []
+    for w in sorted(words, key=lambda e: (e.bbox[1] + e.bbox[3]) / 2):
+        c = (w.bbox[1] + w.bbox[3]) / 2
+        h = w.bbox[3] - w.bbox[1]
+        for i in range(len(lines)):
+            if abs(c - centers[i]) <= _LINE_CENTER_TOLERANCE * max(heights[i], h):
+                lines[i].append(w)
+                centers[i] += (c - centers[i]) / len(lines[i])
+                heights[i] = max(heights[i], h)
+                break
+        else:
+            lines.append([w])
+            centers.append(c)
+            heights.append(h)
+    order = sorted(range(len(lines)), key=lambda i: centers[i])
+    return [sorted(lines[i], key=lambda e: e.bbox[0]) for i in order]
 
 
 def group_text_entities(entities: list[PIIEntity]) -> list[EntityGroup]:
-    """Merge adjacent same-category words into logical entities.
+    """Merge same-line, same-category word runs into logical entities.
 
-    Words are walked in (line, x) order; each either extends the previous
-    group of its category (same line, gap <= _MAX_GAP_FACTOR x line height)
-    or starts a new one. Visual entities are not grouped.
+    Words are first clustered into visual lines (mixed OCR box heights on one
+    printed line must not break a name apart), then walked left-to-right: a
+    word extends its category's open group when the horizontal gap is within
+    _MAX_GAP_FACTOR x line height, even across interleaved words of other
+    categories. Groups come back in reading order. Visual entities are not
+    grouped.
     """
-    words = sorted(
-        (e for e in entities if e.kind == "text"),
-        key=lambda e: ((e.bbox[1] + e.bbox[3]) / 2, e.bbox[0]),
-    )
+    words = [e for e in entities if e.kind == "text"]
     groups: list[EntityGroup] = []
-    open_by_category: dict[str, EntityGroup] = {}
-
-    for w in words:
-        x0, y0, x1, y1 = w.bbox
-        prev = open_by_category.get(w.category)
-        if prev is not None and _same_line(prev.bbox, w.bbox):
-            line_height = min(prev.bbox[3] - prev.bbox[1], y1 - y0)
-            if 0 <= x0 - prev.bbox[2] <= _MAX_GAP_FACTOR * line_height:
+    for line in _cluster_lines(words):
+        line_height = max(e.bbox[3] - e.bbox[1] for e in line)
+        open_by_category: dict[str, EntityGroup] = {}
+        for w in line:
+            x0, y0, x1, y1 = w.bbox
+            prev = open_by_category.get(w.category)
+            if prev is not None and 0 <= x0 - prev.bbox[2] <= _MAX_GAP_FACTOR * line_height:
                 prev.bbox = (min(prev.bbox[0], x0), min(prev.bbox[1], y0),
                              max(prev.bbox[2], x1), max(prev.bbox[3], y1))
                 prev.text = f"{prev.text} {w.text or ''}".strip()
                 continue
-        group = EntityGroup(category=w.category, bbox=(x0, y0, x1, y1),
-                            text=(w.text or "").strip())
-        groups.append(group)
-        open_by_category[w.category] = group
+            group = EntityGroup(category=w.category, bbox=(x0, y0, x1, y1),
+                                text=(w.text or "").strip())
+            groups.append(group)
+            open_by_category[w.category] = group
     return groups
 
 
@@ -123,12 +147,27 @@ def _fitted_font(draw: ImageDraw.ImageDraw, text: str, box_w: int, box_h: int):
     return font
 
 
-def render_text_in_box(img: Image.Image, bbox: tuple, replacement: str) -> None:
-    """Erase the box to its surrounding background color and draw `replacement`."""
-    draw = ImageDraw.Draw(img)
-    bg = _background_color(img, bbox)
+def _padded(bbox: tuple, img: Image.Image) -> tuple[int, int, int, int]:
+    """Expand the box to cover antialiased edges/ascenders that OCR boxes clip."""
     x0, y0, x1, y1 = bbox
-    draw.rectangle([x0, y0, x1, y1], fill=bg)
+    pad = max(2, int(0.15 * (y1 - y0)))
+    W, H = img.size
+    return (max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad), min(H, y1 + pad))
+
+
+def erase_box(img: Image.Image, bbox: tuple) -> tuple[int, int, int]:
+    """Fill the (padded) box with its surrounding background color; return it."""
+    box = _padded(bbox, img)
+    bg = _background_color(img, box)
+    ImageDraw.Draw(img).rectangle(list(box), fill=bg)
+    return bg
+
+
+def draw_label_in_box(img: Image.Image, bbox: tuple, replacement: str,
+                      bg: tuple[int, int, int]) -> None:
+    """Draw `replacement` inside the box, sized to fit, black/white by bg."""
+    draw = ImageDraw.Draw(img)
+    x0, y0, x1, y1 = bbox
     luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
     ink = (20, 20, 20) if luminance > 140 else (245, 245, 245)
     font = _fitted_font(draw, replacement, max(1, x1 - x0 - 2), max(1, y1 - y0))
@@ -136,6 +175,11 @@ def render_text_in_box(img: Image.Image, bbox: tuple, replacement: str) -> None:
     text_h = top[3] - top[1]
     draw.text((x0 + 1, y0 + max(0, ((y1 - y0) - text_h) // 2) - top[1]),
               replacement, fill=ink, font=font)
+
+
+def render_text_in_box(img: Image.Image, bbox: tuple, replacement: str) -> None:
+    """Erase the box to its surrounding background color and draw `replacement`."""
+    draw_label_in_box(img, bbox, replacement, erase_box(img, bbox))
 
 
 def render_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> None:
@@ -152,12 +196,21 @@ def render_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> N
 
 
 # -------------------------------------------------------------- appliers --- #
+def _apply_text_replacements(out: Image.Image, groups: list[EntityGroup],
+                             substitute) -> None:
+    """Two passes — erase every box first, then draw every label — so a merged
+    box that overlaps a neighbor cannot wipe out its already-drawn label."""
+    backgrounds = [erase_box(out, g.bbox) for g in groups]
+    for g, bg in zip(groups, backgrounds):
+        draw_label_in_box(out, g.bbox, substitute(g), bg)
+
+
 def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
                      mapping: PseudonymMapping) -> Image.Image:
     out = img.convert("RGB").copy()
-    for group in group_text_entities(entities):
-        pseudonym = mapping.pseudonym_for(group.category, group.text)
-        render_text_in_box(out, group.bbox, pseudonym)
+    _apply_text_replacements(
+        out, group_text_entities(entities),
+        lambda g: mapping.pseudonym_for(g.category, g.text))
     for e in entities:
         if e.kind == "visual":
             render_visual_placeholder(out, e.bbox, e.category)
@@ -166,9 +219,10 @@ def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
 
 def apply_anonymize(img: Image.Image, entities: list[PIIEntity]) -> Image.Image:
     out = img.convert("RGB").copy()
+    _apply_text_replacements(
+        out, group_text_entities(entities),
+        lambda g: anonymize_value(g.category, g.text))
     draw = ImageDraw.Draw(out)
-    for group in group_text_entities(entities):
-        render_text_in_box(out, group.bbox, anonymize_value(group.category, group.text))
     for e in entities:
         if e.kind == "visual":
             draw.rectangle(list(e.bbox), fill=(0, 0, 0))

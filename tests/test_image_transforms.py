@@ -53,6 +53,43 @@ def test_visual_entities_are_not_grouped():
     assert group_text_entities(entities) == []
 
 
+def test_mixed_box_heights_on_one_printed_line_still_merge():
+    # Real OCR gives differing box heights for words on the same line; that
+    # must not split "John Doe" into Person_1 + Person_2.
+    entities = [
+        _word("primary_subject_name", (10, 10, 50, 30), "John"),
+        _word("primary_subject_name", (55, 16, 90, 28), "Doe"),
+    ]
+    groups = group_text_entities(entities)
+    assert len(groups) == 1
+    assert groups[0].text == "John Doe"
+
+
+def test_groups_come_back_in_reading_order():
+    # Input deliberately lists the lower line first; numbering follows the
+    # order groups are returned, so reading order matters.
+    entities = [
+        _word("primary_subject_name", (10, 50, 50, 70), "Asha"),
+        _word("primary_subject_name", (10, 10, 50, 30), "John"),
+    ]
+    groups = group_text_entities(entities)
+    assert [g.text for g in groups] == ["John", "Asha"]
+
+
+def test_chain_survives_interleaved_other_category_word():
+    # "14 MG Road, <Bangalore,> Karnataka" — the address run continues across
+    # the city word instead of restarting a new numbered group.
+    entities = [
+        _word("street_address", (0, 0, 40, 20), "14"),
+        _word("city_district", (44, 0, 58, 20), "Blr"),
+        _word("street_address", (62, 0, 100, 20), "Road"),
+    ]
+    groups = group_text_entities(entities)
+    assert len(groups) == 2
+    street = next(g for g in groups if g.category == "street_address")
+    assert street.text == "14 Road"
+
+
 # --------------------------------------------------------------- appliers --- #
 def test_deidentify_assigns_one_pseudonym_per_merged_entity():
     img = Image.new("RGB", (200, 60), "white")
