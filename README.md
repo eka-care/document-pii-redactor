@@ -1,13 +1,3 @@
----
-title: Eka PII Redactor
-emoji: 🛡️
-colorFrom: blue
-colorTo: purple
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Eka-PII-redaction
 
 Detect and redact **PII in document images** — both **text** PII (names, addresses,
@@ -216,14 +206,16 @@ the "Run as a container" section above. To (re)deploy:
 2. Add the model's read token as a Space secret: Space → Settings →
    **Repository secrets** → add `HF_TOKEN`. The server already reads it via
    `huggingface_hub`'s standard auth — no code change needed.
-3. Push this repo to the Space's git remote:
-   ```bash
-   git remote add space https://huggingface.co/spaces/ekacare/pii-redactor-demo
-   git push space add-streamlit-tester:main   # or whichever branch is ready
-   ```
+3. Deploy: `./scripts/push_space.sh`. It pushes the current commit to the
+   Space's git remote, with `.space-metadata.yaml`'s front matter prepended
+   to `README.md` for that push only — the Space needs that front matter to
+   render its card (title/sdk/app_port/...), but GitHub and PyPI don't know
+   to strip HF-specific front matter, so it's kept out of the tracked
+   `README.md` and only injected at deploy time. Auth: set `HF_TOKEN`, or it
+   falls back to your cached `hf auth login` token.
 4. Watch the build under the Space's "Logs" tab. The base image
-   (`pytorch/pytorch:...-cuda12.1-cudnn9-runtime`) is large, so the first
-   build can take a while; subsequent pushes reuse Docker layer caching.
+   (`pytorch/pytorch:...-cudnn9-runtime`) is large, so the first build can
+   take a while; subsequent pushes reuse Docker layer caching.
 5. Once it shows **Running**, open the Space URL and click through both tabs.
 
 ## Publishing the model weights
