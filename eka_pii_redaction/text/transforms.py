@@ -52,15 +52,39 @@ def anonymize_value(category: str, value: str) -> str:
     return f"[{label_for(category).upper()}]"
 
 
+def merge_adjacent_spans(text: str, spans: Iterable[TextPIISpan]) -> list[TextPIISpan]:
+    """Merge same-category spans separated by whitespace only.
+
+    BIO decoding sometimes restarts mid-entity, splitting "Mr. John Doe" into
+    two spans — without merging, de-identification numbers them separately
+    ("Person_1 Person_2"). Whitespace-only separators are safe to bridge; a
+    comma is not ("John, Asha" is two people, not one).
+    """
+    merged: list[TextPIISpan] = []
+    for sp in sorted(spans, key=lambda s: s.start):
+        prev = merged[-1] if merged else None
+        if (prev is not None and sp.category == prev.category
+                and sp.start >= prev.end and not text[prev.end:sp.start].strip()):
+            scores = [s for s in (prev.score, sp.score) if s is not None]
+            merged[-1] = TextPIISpan(
+                category=prev.category, start=prev.start, end=sp.end,
+                l1=prev.l1, text=text[prev.start:sp.end],
+                score=round(min(scores), 4) if len(scores) == 2 else None,
+            )
+        else:
+            merged.append(sp)
+    return merged
+
+
 def _replace_spans(text: str, spans: Iterable[TextPIISpan], substitute) -> str:
-    """Rebuild `text` with each span replaced by substitute(span).
+    """Rebuild `text` with each merged span replaced by substitute(span).
 
     Left-to-right on character offsets; spans overlapping an already-consumed
     region are skipped so offsets stay valid (same rule as apply_mask).
     """
     out: list[str] = []
     prev = 0
-    for sp in sorted(spans, key=lambda s: s.start):
+    for sp in merge_adjacent_spans(text, spans):
         if sp.start < prev:
             continue
         out.append(text[prev:sp.start])

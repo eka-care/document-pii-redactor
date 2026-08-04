@@ -1,7 +1,7 @@
 from eka_pii_redaction.pseudonym import PseudonymMapping
 from eka_pii_redaction.text.redactor import TextPIISpan
 from eka_pii_redaction.text.transforms import (
-    anonymize_value, apply_anonymization, apply_pseudonyms,
+    anonymize_value, apply_anonymization, apply_pseudonyms, merge_adjacent_spans,
 )
 
 
@@ -43,6 +43,38 @@ def test_overlapping_spans_skip_consumed_region():
     assert out == "Email_1ef"
 
 
+def test_split_name_spans_merge_into_one_pseudonym():
+    # BIO decoding sometimes restarts mid-entity ("Mr. John" + "Doe");
+    # whitespace-separated same-category spans must get ONE pseudonym.
+    text = "Patient: Mr. John Doe here"
+    spans = [
+        _span("primary_subject_name", 9, 17, "person", "Mr. John"),
+        _span("primary_subject_name", 18, 21, "person", "Doe"),
+    ]
+    out = apply_pseudonyms(text, spans, PseudonymMapping())
+    assert out == "Patient: Person_1 here"
+
+
+def test_comma_separated_names_stay_separate_people():
+    text = "John, Asha"
+    spans = [
+        _span("primary_subject_name", 0, 4, "person", "John"),
+        _span("primary_subject_name", 6, 10, "person", "Asha"),
+    ]
+    out = apply_pseudonyms(text, spans, PseudonymMapping())
+    assert out == "Person_1, Person_2"
+
+
+def test_adjacent_different_categories_do_not_merge():
+    text = "Indiranagar Karnataka"
+    spans = [
+        _span("city_district", 0, 11, "location", "Indiranagar"),
+        _span("state_province", 12, 21, "location", "Karnataka"),
+    ]
+    merged = merge_adjacent_spans(text, spans)
+    assert len(merged) == 2
+
+
 # -------------------------------------------------------------- anonymize --- #
 def test_age_buckets():
     assert anonymize_value("age", "45 yrs") == "40–49"
@@ -71,6 +103,16 @@ def test_direct_identifiers_collapse_without_numbering():
     assert anonymize_value("other_person_name", "Asha") == "[PERSON]"
     assert anonymize_value("phone_mobile", "+91 98765 43210") == "[PHONE]"
     assert anonymize_value("aadhaar_12_digit", "1234 5678 9012") == "[AADHAAR]"
+
+
+def test_anonymize_collapses_adjacent_same_category_spans():
+    # Without merging this would read "[PERSON] [PERSON]".
+    text = "Mr. John Doe visited"
+    spans = [
+        _span("primary_subject_name", 0, 8, "person", "Mr. John"),
+        _span("primary_subject_name", 9, 12, "person", "Doe"),
+    ]
+    assert apply_anonymization(text, spans) == "[PERSON] visited"
 
 
 def test_apply_anonymization_end_to_end():
