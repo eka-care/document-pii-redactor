@@ -55,12 +55,18 @@ class EntityGroup:
 
     @property
     def type_height(self) -> int:
-        """Median height of the member words — the size the original text was
-        actually printed at, unlike the union bbox which grows on merges."""
+        """The size the original text was printed at (not the union bbox).
+
+        85th percentile of member word heights, after dropping outliers under
+        half the tallest word: punctuation gets tiny boxes that drag a median
+        down, while boxes without ascenders/descenders under-measure the type
+        — the tall end of the distribution is closest to the true print size.
+        """
         if not self.word_heights:
             return self.bbox[3] - self.bbox[1]
-        ordered = sorted(self.word_heights)
-        return ordered[len(ordered) // 2]
+        tallest = max(self.word_heights)
+        kept = sorted(h for h in self.word_heights if h >= 0.5 * tallest)
+        return kept[min(len(kept) - 1, int(0.85 * len(kept)))]
 
 
 @dataclass
@@ -183,17 +189,43 @@ def _background_color(img: Image.Image, bbox: tuple) -> tuple[int, int, int]:
     return tuple(int(v) for v in np.median(ring, axis=0)[:3])
 
 
+# Resolved once: first scalable font that actually loads on this system.
+# PIL's bare load_default() is a fixed ~10px bitmap that IGNORES the size
+# argument — silently falling back to it renders every label tiny.
+_FONT_CANDIDATES = [
+    "DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",   # Debian/Ubuntu
+    "/System/Library/Fonts/Supplemental/Arial.ttf",      # macOS
+    "/System/Library/Fonts/Helvetica.ttc",               # macOS fallback
+    "Arial.ttf",
+]
+_font_path: str | None = None
+_font_searched = False
+
+
 def _load_font(size: int):
+    global _font_path, _font_searched
+    if not _font_searched:
+        _font_searched = True
+        for cand in _FONT_CANDIDATES:
+            try:
+                ImageFont.truetype(cand, 12)
+                _font_path = cand
+                break
+            except OSError:
+                continue
+    if _font_path is not None:
+        return ImageFont.truetype(_font_path, size)
     try:
-        return ImageFont.truetype("DejaVuSans.ttf", size)
-    except OSError:
+        return ImageFont.load_default(size=size)  # Pillow >= 10.1: scalable
+    except TypeError:
         return ImageFont.load_default()
 
 
 def _fitted_font(draw: ImageDraw.ImageDraw, text: str, box_w: int,
-                 start_height: int):
-    """Font sized to match print of `start_height`, shrunk to fit box_w."""
-    size = max(8, int(start_height * 0.9))
+                 start_size: int):
+    """Font at `start_size`, shrunk only as needed to fit box_w."""
+    size = max(8, start_size)
     font = _load_font(size)
     while size > 8 and draw.textlength(text, font=font) > box_w:
         size -= 1
@@ -201,10 +233,24 @@ def _fitted_font(draw: ImageDraw.ImageDraw, text: str, box_w: int,
     return font
 
 
+def _label_size(box_h: int, type_h: int) -> int:
+    """Pick a label size that neither drowns in the box nor balloons.
+
+    DejaVu's cap height is ~0.72 em while printed glyphs typically fill most
+    of their OCR box, so an em equal to the word height renders visibly
+    smaller than the original — compensate by 1.2x. Tall merged blocks grow
+    toward ~72% of the block height so the label fills the erased area, but
+    never beyond 2.2x the original word size.
+    """
+    if box_h <= 1.6 * type_h:
+        return int(1.2 * type_h)
+    return int(min(0.72 * box_h, 2.2 * type_h))
+
+
 def _padded(bbox: tuple, img: Image.Image) -> tuple[int, int, int, int]:
     """Expand the box to cover antialiased edges/ascenders that OCR boxes clip."""
     x0, y0, x1, y1 = bbox
-    pad = max(2, int(0.15 * (y1 - y0)))
+    pad = max(2, int(0.2 * (y1 - y0)))
     W, H = img.size
     return (max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad), min(H, y1 + pad))
 
@@ -231,7 +277,8 @@ def draw_label_in_box(img: Image.Image, bbox: tuple, replacement: str,
     luminance = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
     ink = (20, 20, 20) if luminance > 140 else (245, 245, 245)
     height = min(type_height or (y1 - y0), y1 - y0)
-    font = _fitted_font(draw, replacement, max(1, x1 - x0 - 2), max(1, height))
+    font = _fitted_font(draw, replacement, max(1, x1 - x0 - 2),
+                        _label_size(y1 - y0, max(1, height)))
     if (y1 - y0) <= 1.6 * height:
         # Single-line region: sit the label on the original baseline (OCR
         # boxes include descender space, so the baseline is a bit above the
@@ -261,7 +308,7 @@ def label_visual_placeholder(img: Image.Image, bbox: tuple, category: str) -> No
     draw = ImageDraw.Draw(img)
     x0, y0, x1, y1 = bbox
     label = VISUAL_PLACEHOLDER_LABELS.get(category, "[REMOVED]")
-    font = _fitted_font(draw, label, max(1, x1 - x0 - 4), max(1, (y1 - y0) // 3))
+    font = _fitted_font(draw, label, max(1, x1 - x0 - 4), max(8, (y1 - y0) // 4))
     tb = draw.textbbox((0, 0), label, font=font)
     tw, th = tb[2] - tb[0], tb[3] - tb[1]
     draw.text((x0 + max(0, ((x1 - x0) - tw) // 2), y0 + max(0, ((y1 - y0) - th) // 2) - tb[1]),
