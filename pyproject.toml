@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eka-pii-redaction"
 version = "0.1.1"
-description = "Detect and redact text + visual PII in document images (LayoutLMv3 + YOLO)."
+description = "Detect and redact text + visual PII in document images and plain text."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "eka-care" }]
-keywords = ["pii", "redaction", "ocr", "layoutlmv3", "yolo", "document-ai"]
+keywords = ["pii", "redaction", "ocr", "document-ai"]
 
 dependencies = [
     "torch>=2.1",

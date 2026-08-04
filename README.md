@@ -4,9 +4,9 @@ Detect and redact **PII in document images** — both **text** PII (names, addre
 IDs, dates, phone/email, …) and **visual** entities (signatures, stamps/seals,
 QR/barcodes, face photos, fingerprints, logos) — behind a single class.
 
-- **One install, one Hugging Face repo.** The package internally pulls two model
-  weights (a LayoutLMv3 text classifier + a YOLO visual detector) from one HF
-  repo; you only ever reference one repo id.
+- **One install, one Hugging Face repo.** The package internally pulls the
+  model weights it needs from one HF repo; you only ever reference one
+  repo id.
 - **Text + visual** in one call, or text-only if you don't need the detector.
 - **CPU or GPU** — auto-selects CUDA if available, else CPU.
 - **Choose what to redact** — exclude any categories; everything is on by default.
@@ -50,7 +50,7 @@ from eka_pii_redaction import ImagePIIRedactor
 # Loads both models from one HF repo; GPU if available, else CPU.
 redactor = ImagePIIRedactor(
     "ekacare/pii-redactors",
-    detect_visual=True,          # set False to skip YOLO download + visual detection
+    detect_visual=True,          # set False to skip the visual-detector download
     # device="cpu",              # force CPU (default: auto)
     # exclude_entities=["logo", "brandname"],  # never redact these
 )
@@ -82,9 +82,9 @@ r.redact("Call John at john@x.com", mask="[REDACTED]")    # -> "Call [REDACTED] 
 r.redact("Call John at john@x.com", mask="[{category}]")  # -> "Call [primary_subject_name] at [email]"
 ```
 
-`TextPIIRedactor` runs a multilingual MiniLM token classifier on raw text — no OCR,
-no image — and returns `TextPIISpan(category, start, end, l1, text, score)` with
-**character** offsets.
+`TextPIIRedactor` runs a lightweight multilingual token classifier on raw text —
+no OCR, no image — and returns `TextPIISpan(category, start, end, l1, text, score)`
+with **character** offsets.
 
 ## API
 
@@ -99,10 +99,10 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 | arg | meaning |
 |---|---|
 | `hf_repo` | HF repo id **or** a local dir with `text_model/` + `visual_model/best.pt`. |
-| `detect_visual` | If `False`, YOLO weights are **not** downloaded or loaded — text PII only. |
+| `detect_visual` | If `False`, the visual-detector weights are **not** downloaded or loaded — text PII only. |
 | `device` | `"cuda"` / `"cpu"`. `None` → auto (CUDA if available). |
 | `exclude_entities` | Categories to never detect/redact. Default: none excluded (all on). |
-| `visual_score_threshold` | YOLO confidence cutoff. |
+| `visual_score_threshold` | Visual-entity confidence cutoff. |
 | `ocr_lang` | Tesseract language/script, e.g. `"eng"`, `"eng+Devanagari"`. |
 
 ### detect
@@ -196,7 +196,7 @@ eka_pii_redaction/
     yolo11m.py    -> visual-entity detector
   text/                             # TEXT modality (implemented)
     redactor.py  -> TextPIIRedactor  (PII inside plain-text strings, no image)
-    minilm.py    -> MiniLM token classifier (char-span detector)
+    minilm.py    -> text-PII token classifier (char-span detector)
 ```
 
 The single model repo mirrors this:
@@ -204,7 +204,7 @@ The single model repo mirrors this:
 ```
 <hf_repo>/
   image/ layoutlmv3/   yolo/best.pt
-  text/  minilm/                    # multilingual MiniLM text-PII model
+  text/  minilm/                    # multilingual text-PII model
 ```
 
 Both modalities share the category taxonomy (`eka_pii_redaction.taxonomy`); the
@@ -250,7 +250,7 @@ python scripts/build_hf_repo.py \
 
 ## How it works (image modality)
 
-1. **Text-in-image (LayoutLMv3):** Tesseract OCR (via the processor) → words +
-   boxes → LayoutLMv3 token classifier → per-word BIO labels → merged spans.
-2. **Visual (YOLO):** detector over the page → boxes + categories.
+1. **Text-in-image:** Tesseract OCR (via the processor) → words + boxes →
+   token classifier → per-word BIO labels → merged spans.
+2. **Visual:** a detector over the page → boxes + categories.
 3. **Redact:** fill / blur / pixelate every selected entity's box.
