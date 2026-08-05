@@ -123,10 +123,8 @@ async def redact(
     exclude: str | None = Query(None),
 ):
     data = await file.read()
-    img = _get().redact(
-        data, mode=mode, color=_parse_hex_color(color),
-        exclude_entities=_parse_exclude(exclude),
-    )
+    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    img = _get().redact(data, ents, mode=mode, color=_parse_hex_color(color))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
@@ -146,24 +144,24 @@ def detect_text(body: _TextIn):
 
 @app.post("/redact-text")
 def redact_text(body: _RedactTextIn):
-    text = _get_text().redact(body.text, mask=body.mask, exclude_entities=body.exclude)
-    return {"text": text}
+    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
+    return {"text": _get_text().redact(body.text, spans, mask=body.mask)}
 
 
 @app.post("/deidentify-text")
 def deidentify_text(body: _DeidTextIn):
     from .pseudonym import PseudonymMapping
 
+    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
     result = _get_text().deidentify(
-        body.text, exclude_entities=body.exclude,
-        mapping=PseudonymMapping.from_dict(body.mapping),
-    )
+        body.text, spans, mapping=PseudonymMapping.from_dict(body.mapping))
     return {"text": result.text, "mapping": result.mapping.to_dict()}
 
 
 @app.post("/anonymize-text")
 def anonymize_text(body: _TextIn):
-    return {"text": _get_text().anonymize(body.text, exclude_entities=body.exclude)}
+    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
+    return {"text": _get_text().anonymize(body.text, spans)}
 
 
 @app.post("/deidentify")
@@ -173,7 +171,8 @@ async def deidentify(file: UploadFile = File(...), exclude: str | None = Query(N
     import base64
 
     data = await file.read()
-    result = _get().deidentify(data, exclude_entities=_parse_exclude(exclude))
+    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    result = _get().deidentify(data, ents)
     buf = io.BytesIO()
     result.image.save(buf, format="PNG")
     return JSONResponse({
@@ -185,7 +184,8 @@ async def deidentify(file: UploadFile = File(...), exclude: str | None = Query(N
 @app.post("/anonymize")
 async def anonymize(file: UploadFile = File(...), exclude: str | None = Query(None)):
     data = await file.read()
-    img = _get().anonymize(data, exclude_entities=_parse_exclude(exclude))
+    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    img = _get().anonymize(data, ents)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")

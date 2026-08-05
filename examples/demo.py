@@ -33,7 +33,7 @@ def main():
         print(f"  [{e.kind:6}] {e.category:30} {e.l1:16} bbox={e.bbox} "
               f"score={e.score}{txt}")
 
-    redactor.redact(args.image, mode=args.mode).save(args.out)
+    redactor.redact(args.image, entities, mode=args.mode).save(args.out)
     print(f"\nRedacted image saved to {args.out}")
 
 

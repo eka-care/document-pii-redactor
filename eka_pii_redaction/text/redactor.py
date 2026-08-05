@@ -141,54 +141,50 @@ class TextPIIRedactor:
     def redact(
         self,
         text: str,
+        spans: Iterable[TextPIISpan],
         *,
         mask: str = "[REDACTED]",
-        exclude_entities: Optional[Iterable[str]] = None,
     ) -> str:
-        """Return `text` with every detected PII span replaced by `mask`.
+        """Return `text` with every span in `spans` replaced by `mask`.
 
-        `mask` may contain `{category}` / `{l1}` placeholders (see `apply_mask`).
+        `spans` is a `detect()` result — detection is always the explicit
+        first step; every transform consumes its output. `mask` may contain
+        `{category}` / `{l1}` placeholders (see `apply_mask`).
         """
-        spans = self.detect(text, exclude_entities=exclude_entities)
         return apply_mask(text, spans, mask=mask)
 
     def deidentify(
         self,
         text: str,
+        spans: Iterable[TextPIISpan],
         *,
-        exclude_entities: Optional[Iterable[str]] = None,
         mapping=None,
     ):
         """De-identify: replace each entity with a consistent numbered pseudonym.
 
-        Same entity -> same pseudonym; the entity->pseudonym mapping is returned
-        (never persisted here) so an authorized caller can re-link later. Pass a
-        prior result's `mapping` to keep numbering stable across pages/documents
-        of the same record. Returns `TextDeidResult(text, mapping)`.
+        `spans` is a `detect()` result. Same entity -> same pseudonym; the
+        entity->pseudonym mapping is returned (never persisted here) so an
+        authorized caller can re-link later. Pass a prior result's `mapping`
+        to keep numbering stable across pages/documents of the same record.
+        Returns `TextDeidResult(text, mapping)`.
         """
         from ..pseudonym import PseudonymMapping
         from .transforms import TextDeidResult, apply_pseudonyms
 
         if mapping is None:
             mapping = PseudonymMapping()
-        spans = self.detect(text, exclude_entities=exclude_entities)
         return TextDeidResult(text=apply_pseudonyms(text, spans, mapping),
                               mapping=mapping)
 
-    def anonymize(
-        self,
-        text: str,
-        *,
-        exclude_entities: Optional[Iterable[str]] = None,
-    ) -> str:
+    def anonymize(self, text: str, spans: Iterable[TextPIISpan]) -> str:
         """Anonymize: one-way replacement with quasi-identifier generalization.
 
-        Ages become 10-year buckets, dates keep only the year, fine geography
-        collapses to [LOCATION], and direct identifiers become unnumbered
-        category tokens. No mapping exists anywhere — by design this is not
-        reversible, unlike `deidentify()`.
+        `spans` is a `detect()` result. Ages become 10-year buckets, dates
+        keep only the year, fine geography collapses to [LOCATION], and
+        direct identifiers become unnumbered category tokens. No mapping
+        exists anywhere — by design this is not reversible, unlike
+        `deidentify()`.
         """
         from .transforms import apply_anonymization
 
-        spans = self.detect(text, exclude_entities=exclude_entities)
         return apply_anonymization(text, spans)

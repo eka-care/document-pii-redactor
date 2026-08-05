@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eka-pii-redaction"
-version = "0.2.6"
+version = "0.4.0"
 description = "Detect, redact, de-identify, or anonymize PII in document images and plain text."
 readme = "README.md"
 requires-python = ">=3.10"
