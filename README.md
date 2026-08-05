@@ -267,41 +267,14 @@ text model also detects `mac_address` (device_net).
 
 ## Deploying the demo to HF Spaces
 
-The Space (`ekacare/pii-redactor-demo`) runs this same repo's Docker image — see
-the "Run as a container" section above. To (re)deploy:
-
-1. Create the Space once, as **private** (matches the model's current
-   visibility — flip both to public together later):
-   ```bash
-   huggingface-cli repo create pii-redactor-demo --organization ekacare \
-     --type space --space_sdk docker --private
-   ```
-   (or via the HF UI: New Space → owner `ekacare` → SDK `Docker` → Private.)
-2. Add the model's read token as a Space secret: Space → Settings →
-   **Repository secrets** → add `HF_TOKEN`. The server already reads it via
-   `huggingface_hub`'s standard auth — no code change needed.
-3. Deploy: `./scripts/push_space.sh`. It pushes the current commit to the
-   Space's git remote, with `.space-metadata.yaml`'s front matter prepended
-   to `README.md` for that push only — the Space needs that front matter to
-   render its card (title/sdk/app_port/...), but GitHub and PyPI don't know
-   to strip HF-specific front matter, so it's kept out of the tracked
-   `README.md` and only injected at deploy time. Auth: set `HF_TOKEN`, or it
-   falls back to your cached `hf auth login` token.
-4. Watch the build under the Space's "Logs" tab. The base image
-   (`pytorch/pytorch:...-cudnn9-runtime`) is large, so the first build can
-   take a while; subsequent pushes reuse Docker layer caching.
-5. Once it shows **Running**, open the Space URL and click through both tabs.
-
-## Publishing the model weights
-
-The trained checkpoints are assembled into the single HF repo with:
-
-```bash
-python scripts/build_hf_repo.py \
-  --layoutlmv3   .../checkpoints/base_v3_combined_4ep/final \
-  --yolo-weights .../checkpoints/visual/visual_yolo11m/weights/best.pt \
-  --out /tmp/eka-pii-hf --push --repo-id ekacare/pii-redactors
-```
+The Space ([`ekacare/pii-redactor-demo`](https://huggingface.co/spaces/ekacare/pii-redactor-demo))
+runs this same repo's Docker image — see "Run as a container" above. To
+(re)deploy, push the repo to the Space's git remote with HF's Space front
+matter (`title` / `sdk: docker` / `app_port: 7860` / ...) prepended to
+`README.md` for that push — the Space needs it to render its card, but it is
+kept out of this tracked README because GitHub and PyPI would render it as
+literal text. The Space reads the model via an `HF_TOKEN` repository secret
+(Space → Settings → Repository secrets).
 
 ## How it works (image modality)
 
