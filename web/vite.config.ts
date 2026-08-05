@@ -10,6 +10,10 @@ const BACKEND_PROXY_PATHS = [
   '/redact',
   '/detect-text',
   '/redact-text',
+  '/deidentify',
+  '/deidentify-text',
+  '/anonymize',
+  '/anonymize-text',
 ]
 
 export default defineConfig({

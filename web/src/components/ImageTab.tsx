@@ -1,7 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
-import { detect, redact, type EntityTaxonomy, type PIIEntity, type RedactMode } from '../lib/api'
+import {
+  anonymizeImage,
+  deidentifyImage,
+  detect,
+  redact,
+  type EntityTaxonomy,
+  type PIIEntity,
+  type PseudonymMapping,
+  type RedactMode,
+} from '../lib/api'
 import { l1Rgb } from '../lib/colors'
 import Legend from './Legend'
+import MappingTable from './MappingTable'
+
+type Action = 'redact' | 'deidentify' | 'anonymize'
+
+const ACTION_BUTTON_LABELS: Record<Action, string> = {
+  redact: 'Detect & Redact',
+  deidentify: 'Detect & De-identify',
+  anonymize: 'Detect & Anonymize',
+}
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/bmp', 'image/tiff', 'image/webp']
 
@@ -28,6 +46,7 @@ export default function ImageTab({
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [action, setAction] = useState<Action>('redact')
   const [mode, setMode] = useState<RedactMode>('blur')
   const [color, setColor] = useState('#000000')
   const [excludeText, setExcludeText] = useState<Set<string>>(new Set())
@@ -37,6 +56,8 @@ export default function ImageTab({
   const [error, setError] = useState<string | null>(null)
   const [detectedEntities, setDetectedEntities] = useState<PIIEntity[]>([])
   const [redactedUrl, setRedactedUrl] = useState<string | null>(null)
+  const [resultTitle, setResultTitle] = useState('Redacted')
+  const [mapping, setMapping] = useState<PseudonymMapping | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -72,6 +93,7 @@ export default function ImageTab({
     setPreviewUrl(URL.createObjectURL(f))
     setDetectedEntities([])
     setRedactedUrl(null)
+    setMapping(null)
     setError(null)
   }
 
@@ -106,18 +128,31 @@ export default function ImageTab({
     if (!file) return
     setLoading(true)
     setError(null)
+    setMapping(null)
     try {
-      const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16)) as [
-        number,
-        number,
-        number,
-      ]
-      const [ents, blob] = await Promise.all([
-        detect(file, exclude),
-        redact(file, mode, rgb, exclude),
-      ])
-      setDetectedEntities(ents)
-      setRedactedUrl(URL.createObjectURL(blob))
+      const detecting = detect(file, exclude)
+      if (action === 'redact') {
+        const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16)) as [
+          number,
+          number,
+          number,
+        ]
+        const [ents, blob] = await Promise.all([detecting, redact(file, mode, rgb, exclude)])
+        setDetectedEntities(ents)
+        setRedactedUrl(URL.createObjectURL(blob))
+        setResultTitle(`Redacted · ${mode}`)
+      } else if (action === 'deidentify') {
+        const [ents, result] = await Promise.all([detecting, deidentifyImage(file, exclude)])
+        setDetectedEntities(ents)
+        setRedactedUrl(result.imageUrl)
+        setMapping(result.mapping)
+        setResultTitle('De-identified')
+      } else {
+        const [ents, blob] = await Promise.all([detecting, anonymizeImage(file, exclude)])
+        setDetectedEntities(ents)
+        setRedactedUrl(URL.createObjectURL(blob))
+        setResultTitle('Anonymized')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -162,24 +197,44 @@ export default function ImageTab({
           <h2 className="card-title">Options</h2>
           <div className="controls-row">
             <label className="field">
-              <span className="field-label">Redaction mode</span>
-              <select value={mode} onChange={(e) => setMode(e.target.value as RedactMode)}>
-                <option value="solid">solid</option>
-                <option value="blur">blur</option>
-                <option value="pixelate">pixelate</option>
+              <span className="field-label">Action</span>
+              <select value={action} onChange={(e) => setAction(e.target.value as Action)}>
+                <option value="redact">Redact</option>
+                <option value="anonymize">Anonymize</option>
+                <option value="deidentify">De-identify</option>
               </select>
             </label>
-            <label className="field">
-              <span className="field-label">Fill color</span>
-              <input
-                type="color"
-                value={color}
-                disabled={mode !== 'solid'}
-                onChange={(e) => setColor(e.target.value)}
-              />
-              {mode !== 'solid' && <span className="field-hint">Solid mode only</span>}
-            </label>
+            {action === 'redact' && (
+              <>
+                <label className="field">
+                  <span className="field-label">Redaction mode</span>
+                  <select value={mode} onChange={(e) => setMode(e.target.value as RedactMode)}>
+                    <option value="solid">solid</option>
+                    <option value="blur">blur</option>
+                    <option value="pixelate">pixelate</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field-label">Fill color</span>
+                  <input
+                    type="color"
+                    value={color}
+                    disabled={mode !== 'solid'}
+                    onChange={(e) => setColor(e.target.value)}
+                  />
+                  {mode !== 'solid' && <span className="field-hint">Solid mode only</span>}
+                </label>
+              </>
+            )}
           </div>
+          <p className="tab-caption action-hint">
+            {action === 'redact' &&
+              'Destroys the PII regions — nothing is kept, nothing is recoverable.'}
+            {action === 'deidentify' &&
+              'Replaces text PII with consistent pseudonyms (Person_1) rendered in place, faces/signatures with placeholders, and returns the mapping for authorized re-linking.'}
+            {action === 'anonymize' &&
+              'One-way: generalizes ages/dates/geography, collapses names and IDs to tokens, blacks out faces/signatures. No mapping exists.'}
+          </p>
 
           {taxonomy && (
             <details className="exclude-panel">
@@ -218,7 +273,7 @@ export default function ImageTab({
       </div>
 
       <button type="button" className="primary-btn" onClick={run} disabled={!file || !ready || loading}>
-        {loading ? 'Detecting…' : 'Detect & Redact'}
+        {loading ? 'Working…' : ACTION_BUTTON_LABELS[action]}
       </button>
 
       {error && <div className="error-banner">{error}</div>}
@@ -233,15 +288,17 @@ export default function ImageTab({
           </section>
           {redactedUrl && (
             <section className="card">
-              <h2 className="card-title">Redacted &middot; {mode}</h2>
-              <img src={redactedUrl} alt="Redacted result" className="result-image" />
-              <a className="btn-secondary download-btn" href={redactedUrl} download="redacted.png">
-                Download redacted PNG
+              <h2 className="card-title">{resultTitle}</h2>
+              <img src={redactedUrl} alt={`${resultTitle} result`} className="result-image" />
+              <a className="btn-secondary download-btn" href={redactedUrl} download="result.png">
+                Download PNG
               </a>
             </section>
           )}
         </div>
       )}
+
+      {mapping && <MappingTable mapping={mapping} />}
 
       {detectedEntities.length > 0 && (
         <section className="card">

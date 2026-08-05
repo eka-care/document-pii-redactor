@@ -151,3 +151,44 @@ class TextPIIRedactor:
         """
         spans = self.detect(text, exclude_entities=exclude_entities)
         return apply_mask(text, spans, mask=mask)
+
+    def deidentify(
+        self,
+        text: str,
+        *,
+        exclude_entities: Optional[Iterable[str]] = None,
+        mapping=None,
+    ):
+        """De-identify: replace each entity with a consistent numbered pseudonym.
+
+        Same entity -> same pseudonym; the entity->pseudonym mapping is returned
+        (never persisted here) so an authorized caller can re-link later. Pass a
+        prior result's `mapping` to keep numbering stable across pages/documents
+        of the same record. Returns `TextDeidResult(text, mapping)`.
+        """
+        from ..pseudonym import PseudonymMapping
+        from .transforms import TextDeidResult, apply_pseudonyms
+
+        if mapping is None:
+            mapping = PseudonymMapping()
+        spans = self.detect(text, exclude_entities=exclude_entities)
+        return TextDeidResult(text=apply_pseudonyms(text, spans, mapping),
+                              mapping=mapping)
+
+    def anonymize(
+        self,
+        text: str,
+        *,
+        exclude_entities: Optional[Iterable[str]] = None,
+    ) -> str:
+        """Anonymize: one-way replacement with quasi-identifier generalization.
+
+        Ages become 10-year buckets, dates keep only the year, fine geography
+        collapses to [LOCATION], and direct identifiers become unnumbered
+        category tokens. No mapping exists anywhere — by design this is not
+        reversible, unlike `deidentify()`.
+        """
+        from .transforms import apply_anonymization
+
+        spans = self.detect(text, exclude_entities=exclude_entities)
+        return apply_anonymization(text, spans)

@@ -1,7 +1,33 @@
 import { useState } from 'react'
-import { detectText, type TextPIISpan } from '../lib/api'
+import {
+  anonymizeText,
+  deidentifyText,
+  detectText,
+  redactText,
+  type PseudonymMapping,
+  type TextPIISpan,
+} from '../lib/api'
 import { l1Rgb, l1Tint } from '../lib/colors'
 import Legend from './Legend'
+import MappingTable from './MappingTable'
+
+type Action = 'detect' | 'redact' | 'deidentify' | 'anonymize'
+
+const ACTION_BUTTON_LABELS: Record<Action, string> = {
+  detect: 'Detect PII',
+  redact: 'Redact',
+  deidentify: 'De-identify',
+  anonymize: 'Anonymize',
+}
+
+const ACTION_HINTS: Record<Action, string> = {
+  detect: 'Finds PII spans and highlights them in place — nothing is changed.',
+  redact: 'Replaces each span with a [category] token. One-way, nothing kept.',
+  deidentify:
+    'Replaces each entity with a consistent pseudonym (Person_1) and returns the mapping for authorized re-linking.',
+  anonymize:
+    'One-way: generalizes ages/dates/geography, collapses names and IDs to unnumbered tokens. No mapping exists.',
+}
 
 const EXAMPLE_TEXT = `DISCHARGE SUMMARY
 Patient: Mr. John Doe (Male, 45 yrs), DOB 12-03-1979, Blood group O+.
@@ -40,8 +66,12 @@ function renderHighlighted(text: string, spans: TextPIISpan[]) {
 
 export default function TextTab({ entities, ready }: { entities: string[] | null; ready: boolean }) {
   const [text, setText] = useState(EXAMPLE_TEXT)
+  const [action, setAction] = useState<Action>('detect')
   const [exclude, setExclude] = useState<Set<string>>(new Set())
   const [spans, setSpans] = useState<TextPIISpan[]>([])
+  const [outputText, setOutputText] = useState<string | null>(null)
+  const [outputTitle, setOutputTitle] = useState('')
+  const [mapping, setMapping] = useState<PseudonymMapping | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ranOnce, setRanOnce] = useState(false)
@@ -56,8 +86,27 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
   async function run() {
     setLoading(true)
     setError(null)
+    setMapping(null)
+    setOutputText(null)
     try {
-      setSpans(await detectText(text, [...exclude]))
+      const excludeList = [...exclude]
+      if (action === 'detect') {
+        setSpans(await detectText(text, excludeList))
+      } else {
+        setSpans([])
+        if (action === 'redact') {
+          setOutputText(await redactText(text, excludeList))
+          setOutputTitle('Redacted')
+        } else if (action === 'deidentify') {
+          const result = await deidentifyText(text, excludeList)
+          setOutputText(result.text)
+          setMapping(result.mapping)
+          setOutputTitle('De-identified')
+        } else {
+          setOutputText(await anonymizeText(text, excludeList))
+          setOutputTitle('Anonymized')
+        }
+      }
       setRanOnce(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -98,14 +147,35 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
           rows={10}
         />
 
-        <button type="button" className="primary-btn" onClick={run} disabled={!text.trim() || !ready || loading}>
-          {loading ? 'Detecting…' : 'Detect PII'}
-        </button>
+        <div className="controls-row">
+          <label className="field">
+            <span className="field-label">Action</span>
+            <select value={action} onChange={(e) => setAction(e.target.value as Action)}>
+              <option value="detect">Detect (highlight)</option>
+              <option value="redact">Redact</option>
+              <option value="anonymize">Anonymize</option>
+              <option value="deidentify">De-identify</option>
+            </select>
+          </label>
+          <button type="button" className="primary-btn" onClick={run} disabled={!text.trim() || !ready || loading}>
+            {loading ? 'Working…' : ACTION_BUTTON_LABELS[action]}
+          </button>
+        </div>
+        <p className="tab-caption action-hint">{ACTION_HINTS[action]}</p>
       </section>
 
       {error && <div className="error-banner">{error}</div>}
 
-      {ranOnce && (
+      {outputText != null && (
+        <section className="card">
+          <h2 className="card-title">{outputTitle}</h2>
+          <div className="output-text">{outputText}</div>
+        </section>
+      )}
+
+      {mapping && <MappingTable mapping={mapping} />}
+
+      {ranOnce && action === 'detect' && (
         <>
           {spans.length > 0 ? (
             <>

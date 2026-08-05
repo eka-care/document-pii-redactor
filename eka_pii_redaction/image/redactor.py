@@ -209,3 +209,53 @@ class ImagePIIRedactor:
             else:
                 raise ValueError(f"unknown redaction mode: {mode!r}")
         return img
+
+    # ------------------------------------------------------------------ #
+    def deidentify(
+        self,
+        image: ImageInput,
+        *,
+        exclude_entities: Optional[Iterable[str]] = None,
+        ocr_lang: Optional[str] = None,
+        mapping=None,
+    ):
+        """De-identify: consistent pseudonyms rendered in place of text PII.
+
+        OCR'd words are merged into logical entities ("John Doe" -> one
+        "Person_1"), erased to the surrounding background color, and the
+        pseudonym is drawn into the box. Visual-only entities (faces,
+        signatures, ...) become neutral labeled placeholders. Returns
+        `ImageDeidResult(image, mapping)`; pass a prior `mapping` to keep
+        numbering stable across pages of one record.
+        """
+        from ..pseudonym import PseudonymMapping
+        from .transforms import ImageDeidResult, apply_deidentify
+
+        if mapping is None:
+            mapping = PseudonymMapping()
+        img = _load_image(image)
+        entities = self.detect(img, exclude_entities=exclude_entities,
+                               ocr_lang=ocr_lang)
+        return ImageDeidResult(image=apply_deidentify(img, entities, mapping),
+                               mapping=mapping)
+
+    def anonymize(
+        self,
+        image: ImageInput,
+        *,
+        exclude_entities: Optional[Iterable[str]] = None,
+        ocr_lang: Optional[str] = None,
+    ) -> Image.Image:
+        """Anonymize: one-way in-place replacement, no mapping anywhere.
+
+        Text PII is rendered as generalized values/unnumbered tokens (same
+        rules as `TextPIIRedactor.anonymize`); visual-only entities are
+        filled solid black — biometrics have nothing to generalize, so
+        destruction is the anonymization.
+        """
+        from .transforms import apply_anonymize
+
+        img = _load_image(image)
+        entities = self.detect(img, exclude_entities=exclude_entities,
+                               ocr_lang=ocr_lang)
+        return apply_anonymize(img, entities)

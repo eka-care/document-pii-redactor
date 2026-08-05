@@ -380,6 +380,24 @@ input:disabled {
   font-size: 0.95rem;
 }
 
+.output-text {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  font-size: 0.95rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.action-hint {
+  margin-top: 10px;
+}
+
+.controls-row .primary-btn {
+  align-self: flex-end;
+}
+
 .pii-mark {
   display: inline;
   color: var(--ink);

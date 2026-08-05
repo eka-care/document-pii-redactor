@@ -7,15 +7,17 @@
 """
 from .entities import PIIEntity
 from .image import ImagePIIRedactor
+from .pseudonym import PseudonymMapping
 from .taxonomy import ALL_ENTITIES, TEXT_ENTITIES, TEXT_REDACTABLE, VISUAL_ENTITIES
 from .text import TextPIIRedactor, TextPIISpan
 
-__version__ = "0.1.0"
+__version__ = "0.2.6"
 __all__ = [
     "ImagePIIRedactor",
     "TextPIIRedactor",
     "TextPIISpan",
     "PIIEntity",
+    "PseudonymMapping",
     "ALL_ENTITIES",
     "TEXT_ENTITIES",
     "TEXT_REDACTABLE",
