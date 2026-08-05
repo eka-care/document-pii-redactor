@@ -176,6 +176,7 @@ class ImagePIIRedactor:
         exclude_entities: Optional[Iterable[str]] = None,
         ocr_lang: Optional[str] = None,
         pad: int = 2,
+        entities: Optional[list[PIIEntity]] = None,
     ) -> Image.Image:
         """Return a copy of the image with detected PII regions redacted.
 
@@ -185,9 +186,13 @@ class ImagePIIRedactor:
             exclude_entities: categories to leave un-redacted (unioned with the
                 constructor's exclusions).
             pad: pixels to expand each box by (covers anti-aliasing at edges).
+            entities: a prior `detect()` result to reuse (detection is the
+                expensive step; all transforms accept its output).
         """
         img = _load_image(image).copy()
-        entities = self.detect(image, exclude_entities=exclude_entities, ocr_lang=ocr_lang)
+        if entities is None:
+            entities = self.detect(image, exclude_entities=exclude_entities,
+                                   ocr_lang=ocr_lang)
         W, H = img.size
 
         for e in entities:
@@ -218,6 +223,7 @@ class ImagePIIRedactor:
         exclude_entities: Optional[Iterable[str]] = None,
         ocr_lang: Optional[str] = None,
         mapping=None,
+        entities: Optional[list[PIIEntity]] = None,
     ):
         """De-identify: consistent pseudonyms rendered in place of text PII.
 
@@ -226,7 +232,8 @@ class ImagePIIRedactor:
         pseudonym is drawn into the box. Visual-only entities (faces,
         signatures, ...) become neutral labeled placeholders. Returns
         `ImageDeidResult(image, mapping)`; pass a prior `mapping` to keep
-        numbering stable across pages of one record.
+        numbering stable across pages of one record, and `entities` from a
+        prior `detect()` to reuse it.
         """
         from ..pseudonym import PseudonymMapping
         from .transforms import ImageDeidResult, apply_deidentify
@@ -234,8 +241,9 @@ class ImagePIIRedactor:
         if mapping is None:
             mapping = PseudonymMapping()
         img = _load_image(image)
-        entities = self.detect(img, exclude_entities=exclude_entities,
-                               ocr_lang=ocr_lang)
+        if entities is None:
+            entities = self.detect(img, exclude_entities=exclude_entities,
+                                   ocr_lang=ocr_lang)
         return ImageDeidResult(image=apply_deidentify(img, entities, mapping),
                                mapping=mapping)
 
@@ -245,17 +253,20 @@ class ImagePIIRedactor:
         *,
         exclude_entities: Optional[Iterable[str]] = None,
         ocr_lang: Optional[str] = None,
+        entities: Optional[list[PIIEntity]] = None,
     ) -> Image.Image:
         """Anonymize: one-way in-place replacement, no mapping anywhere.
 
         Text PII is rendered as generalized values/unnumbered tokens (same
         rules as `TextPIIRedactor.anonymize`); visual-only entities are
         filled solid black — biometrics have nothing to generalize, so
-        destruction is the anonymization.
+        destruction is the anonymization. Pass `entities` from a prior
+        `detect()` to reuse it.
         """
         from .transforms import apply_anonymize
 
         img = _load_image(image)
-        entities = self.detect(img, exclude_entities=exclude_entities,
-                               ocr_lang=ocr_lang)
+        if entities is None:
+            entities = self.detect(img, exclude_entities=exclude_entities,
+                                   ocr_lang=ocr_lang)
         return apply_anonymize(img, entities)

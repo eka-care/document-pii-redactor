@@ -59,81 +59,80 @@ brew install tesseract
 
 ## Quickstart
 
+**`detect()` is the core primitive** — it finds every PII entity with its
+location, category, and confidence. The transforms (redact / anonymize /
+de-identify) are consumers of its output: run detection once, feed the same
+result into whichever transform you need.
+
+### Detect — images
+
 ```python
 from eka_pii_redaction import ImagePIIRedactor
 
-# Loads both models from one HF repo; GPU if available, else CPU.
+# Loads the models from one HF repo; GPU if available, else CPU.
 redactor = ImagePIIRedactor(
     "ekacare/pii-redactors",
     detect_visual=True,          # set False to skip visual entities (QR codes,
                                   # face photos, signatures, etc.) — text PII only
     # device="cpu",              # force CPU (default: auto)
-    # exclude_entities=["logo", "brandname"],  # never redact these
+    # exclude_entities=["logo", "brandname"],  # never detect these
 )
 
-# 1) Get the structured entity list
-for e in redactor.detect("page.jpg"):
+entities = redactor.detect("page.jpg")
+for e in entities:
     print(e.kind, e.category, e.bbox, e.text, e.score)
-
-# 2) Get a redacted image (PIL.Image)
-redactor.redact("page.jpg").save("redacted.png")
-redactor.redact("page.jpg", mode="blur").save("blurred.png")  # solid|blur|pixelate
 ```
 
-`detect()` / `redact()` accept a file path, raw `bytes`, or a `PIL.Image`.
-
-### Text-only PII (plain strings)
+### Detect — plain text
 
 ```python
 from eka_pii_redaction import TextPIIRedactor
 
 r = TextPIIRedactor("ekacare/pii-redactors")     # GPU if available, else CPU
 
-# 1) Character-span entities
-for s in r.detect("John Doe, DOB 1990-01-01, john@x.com"):
+spans = r.detect("John Doe, DOB 1990-01-01, john@x.com")
+for s in spans:
     print(s.category, s.l1, s.start, s.end, s.text, s.score)
-
-# 2) Redacted string (mask supports {category} / {l1} placeholders)
-r.redact("Call John at john@x.com", mask="[REDACTED]")    # -> "Call [REDACTED] at [REDACTED]"
-r.redact("Call John at john@x.com", mask="[{category}]")  # -> "Call [primary_subject_name] at [email]"
 ```
 
 `TextPIIRedactor` runs a lightweight multilingual token classifier on raw text —
 no OCR, no image — and returns `TextPIISpan(category, start, end, l1, text, score)`
-with **character** offsets.
+with **character** offsets. `detect()` (image) accepts a file path, raw
+`bytes`, or a `PIL.Image`.
 
-### De-identify and anonymize
+### Feed detections into transforms
 
-Both modalities support all three modes:
+Every transform accepts a prior `detect()` result (`entities=` for images,
+`spans=` for text) — detection runs once, transforms reuse it. Called without
+it, each transform just detects internally.
 
 ```python
-# --- Text ---
-r = TextPIIRedactor("ekacare/pii-redactors")
+# --- Image: one detection, three outputs ---
+entities = redactor.detect("page.jpg")
 
-result = r.deidentify("John Doe met Asha. Call John at +91 98765 43210.")
-result.text
-# -> "Person_1 met Person_2. Call Person_3 at Phone_1."
-result.mapping.to_dict()   # entity -> pseudonym map; store it securely to re-link.
-                            # Pass mapping=result.mapping on the next page/document
-                            # of the same record to keep numbering consistent.
-
-r.anonymize("Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka.")
-# -> "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."  (no mapping exists)
-
-# --- Image ---
-redactor = ImagePIIRedactor("ekacare/pii-redactors")
-
-deid = redactor.deidentify("page.jpg")   # ImageDeidResult
+redactor.redact("page.jpg", mode="blur", entities=entities).save("redacted.png")
+redactor.anonymize("page.jpg", entities=entities).save("anonymized.png")
+deid = redactor.deidentify("page.jpg", entities=entities)   # ImageDeidResult
 deid.image.save("deidentified.png")      # pseudonyms rendered in place;
                                           # faces/signatures become placeholders
-deid.mapping.to_dict()
+deid.mapping.to_dict()                   # store securely to re-link later
 
-redactor.anonymize("page.jpg").save("anonymized.png")
-# generalized values rendered in place; faces/signatures filled solid black
+# --- Text: same pattern ---
+text = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka."
+spans = r.detect(text)
+
+r.redact(text, mask="[{category}]", spans=spans)
+r.anonymize(text, spans=spans)
+# -> "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."  (no mapping exists)
+result = r.deidentify(text, spans=spans)
+result.text      # -> "Person_1, Age_1 yrs, DOB Date_1, City_1, State_1."
+result.mapping   # entity -> pseudonym map; pass mapping=result.mapping on the
+                 # next page of the same record to keep numbering consistent
 ```
 
-De-identification consistency is per exact surface form (`"John Doe"` and a
-later bare `"John"` get different pseudonyms).
+(Example outputs are illustrative — exact spans depend on the model's tagging
+of the input.) De-identification consistency is per exact surface form
+(`"John Doe"` and a later bare `"John"` get different pseudonyms).
 
 ## API
 
@@ -175,10 +174,13 @@ Each `PIIEntity` has:
 
 ```python
 redact(image, *, mode="solid", color=(0,0,0), exclude_entities=None,
-       ocr_lang=None, pad=2) -> PIL.Image
+       ocr_lang=None, pad=2, entities=None) -> PIL.Image
 ```
 
-Returns a redacted copy. `mode` ∈ `solid` | `blur` | `pixelate`.
+Returns a redacted copy. `mode` ∈ `solid` | `blur` | `pixelate`. All
+transforms (`redact` / `anonymize` / `deidentify`, both modalities) accept a
+prior `detect()` result — `entities=` for images, `spans=` for text — so
+detection runs once.
 
 ### list_entities
 
