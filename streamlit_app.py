@@ -202,12 +202,16 @@ with tab_img:
         "Fill color (solid)", value="#000000", disabled=redact_mode != "solid")
     redact_color = tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
 
-    with st.expander("Exclude categories (never detect/redact)"):
-        exclude_text = st.multiselect(
-            "Text categories", TEXT_ENTITIES, default=[], key="img_excl_text")
-        exclude_visual = st.multiselect(
-            "Visual categories", VISUAL_ENTITIES, default=[], key="img_excl_visual")
-    img_exclude = (list(exclude_text) + list(exclude_visual)) or None
+    with st.expander("Categories to detect (all selected by default)"):
+        selected_text = st.multiselect(
+            "Text categories", TEXT_ENTITIES, default=TEXT_ENTITIES,
+            key="img_cat_text")
+        selected_visual = st.multiselect(
+            "Visual categories", VISUAL_ENTITIES, default=VISUAL_ENTITIES,
+            key="img_cat_visual")
+    img_selected = list(selected_text) + list(selected_visual)
+    # None -> all categories (the library default); an explicit subset otherwise.
+    img_categories = None if len(img_selected) == len(TEXT_ENTITIES) + len(VISUAL_ENTITIES) else img_selected
 
     uploaded = st.file_uploader(
         "Upload a document image",
@@ -222,7 +226,7 @@ with tab_img:
         with st.spinner("Detecting…"):
             t0 = time.time()
             entities = image_redactor.detect(
-                image, exclude_entities=img_exclude, ocr_lang=OCR_LANG)
+                image, categories=img_categories, ocr_lang=OCR_LANG)
             detect_s = time.time() - t0
 
         n_text = sum(1 for e in entities if e.kind == "text")
@@ -259,9 +263,11 @@ with tab_txt:
     st.subheader("Text modality")
     st.caption("Detects PII in raw text and highlights each span (color-coded by group).")
 
-    with st.expander("Exclude categories (never detect)"):
-        txt_exclude = st.multiselect(
-            "Text categories", TEXT_REDACTABLE, default=[], key="txt_excl") or None
+    with st.expander("Categories to detect (all selected by default)"):
+        txt_selected = st.multiselect(
+            "Text categories", TEXT_REDACTABLE, default=TEXT_REDACTABLE,
+            key="txt_cat")
+    txt_categories = None if len(txt_selected) == len(TEXT_REDACTABLE) else txt_selected
 
     # An editable example loaded by default — packed with varied PII so the demo
     # shows several categories at once. Users can edit or replace it freely.
@@ -287,7 +293,7 @@ with tab_txt:
     if run_txt and text_in.strip():
         with st.spinner("Detecting…"):
             t0 = time.time()
-            spans = text_redactor.detect(text_in, exclude_entities=txt_exclude)
+            spans = text_redactor.detect(text_in, categories=txt_categories)
             detect_s = time.time() - t0
 
         m1, m2 = st.columns(2)

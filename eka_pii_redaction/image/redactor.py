@@ -87,7 +87,7 @@ class ImagePIIRedactor:
         *,
         detect_visual: bool = True,
         device: Optional[str] = None,
-        exclude_entities: Optional[Iterable[str]] = None,
+        categories: Optional[Iterable[str]] = None,
         visual_score_threshold: float = 0.25,
         ocr_lang: Optional[str] = None,
         cache_dir: Optional[str] = None,
@@ -99,8 +99,7 @@ class ImagePIIRedactor:
             detect_visual: if False, the YOLO weights are neither downloaded nor
                 loaded — only text-in-image PII is detected.
             device: "cuda" / "cpu". None -> auto (cuda if available, else cpu).
-            exclude_entities: categories to never detect/redact. Default: none
-                excluded (all categories active).
+            categories: the categories to detect. Default None = all of them.
             visual_score_threshold: YOLO confidence cutoff for visual entities.
             ocr_lang: Tesseract language/script spec (e.g. "eng", "eng+Devanagari").
         """
@@ -108,7 +107,8 @@ class ImagePIIRedactor:
         self.detect_visual = detect_visual
         self.ocr_lang = ocr_lang
         self.visual_score_threshold = visual_score_threshold
-        self._excluded = set(validate_entities(exclude_entities))
+        self._categories = (set(validate_entities(categories))
+                            if categories is not None else None)
 
         lm_dir, yolo_path = _resolve_sources(hf_repo, detect_visual, cache_dir)
         self.layoutlmv3 = LayoutLMv3Detector(lm_dir, self.device)
@@ -131,25 +131,27 @@ class ImagePIIRedactor:
         """Return all selectable categories, grouped by kind."""
         return {"text": list(TEXT_ENTITIES), "visual": list(VISUAL_ENTITIES)}
 
-    def _active_exclusions(self, exclude_entities: Optional[Iterable[str]]) -> set:
-        extra = set(validate_entities(exclude_entities)) if exclude_entities else set()
-        return self._excluded | extra
+    def _active_categories(self, per_call: Optional[Iterable[str]]):
+        if per_call is not None:
+            return set(validate_entities(per_call))
+        return self._categories  # None -> all categories
 
     # ------------------------------------------------------------------ #
     def detect(
         self,
         image: ImageInput,
         *,
-        exclude_entities: Optional[Iterable[str]] = None,
+        categories: Optional[Iterable[str]] = None,
         ocr_lang: Optional[str] = None,
     ) -> list[PIIEntity]:
         """Detect PII entities (text + visual). Each PIIEntity has `category`,
         `bbox` (pixels), `text`, `l1`, `score`, `kind`.
 
-        `exclude_entities` (per-call) is unioned with the constructor's exclusions.
+        `categories` selects which categories to detect (default: all);
+        given per-call it overrides the constructor's selection.
         """
         img = _load_image(image)
-        excluded = self._active_exclusions(exclude_entities)
+        wanted = self._active_categories(categories)
         lang = ocr_lang if ocr_lang is not None else self.ocr_lang
 
         if self.yolo is not None:
@@ -164,7 +166,9 @@ class ImagePIIRedactor:
         else:
             results = self.layoutlmv3.detect(img, ocr_lang=lang)
 
-        return [e for e in results if e.category not in excluded]
+        if wanted is None:
+            return results
+        return [e for e in results if e.category in wanted]
 
     # ------------------------------------------------------------------ #
     def redact(

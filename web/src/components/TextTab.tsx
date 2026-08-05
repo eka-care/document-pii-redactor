@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   anonymizeText,
   deidentifyText,
@@ -67,7 +67,7 @@ function renderHighlighted(text: string, spans: TextPIISpan[]) {
 export default function TextTab({ entities, ready }: { entities: string[] | null; ready: boolean }) {
   const [text, setText] = useState(EXAMPLE_TEXT)
   const [action, setAction] = useState<Action>('detect')
-  const [exclude, setExclude] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [spans, setSpans] = useState<TextPIISpan[]>([])
   const [outputText, setOutputText] = useState<string | null>(null)
   const [outputTitle, setOutputTitle] = useState('')
@@ -76,34 +76,43 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
   const [error, setError] = useState<string | null>(null)
   const [ranOnce, setRanOnce] = useState(false)
 
+  // All categories selected by default, once the taxonomy arrives.
+  useEffect(() => {
+    if (entities) setSelected(new Set(entities))
+  }, [entities])
+
   function toggle(value: string) {
-    const next = new Set(exclude)
+    const next = new Set(selected)
     if (next.has(value)) next.delete(value)
     else next.add(value)
-    setExclude(next)
+    setSelected(next)
   }
 
+  const allSelected = entities != null && selected.size === entities.length
+  // Omit the param entirely when everything is selected (= server default).
+  const categories = allSelected ? undefined : [...selected]
+
   async function run() {
+    if (selected.size === 0) return
     setLoading(true)
     setError(null)
     setMapping(null)
     setOutputText(null)
     try {
-      const excludeList = [...exclude]
       if (action === 'detect') {
-        setSpans(await detectText(text, excludeList))
+        setSpans(await detectText(text, categories))
       } else {
         setSpans([])
         if (action === 'redact') {
-          setOutputText(await redactText(text, excludeList))
+          setOutputText(await redactText(text, categories))
           setOutputTitle('Redacted')
         } else if (action === 'deidentify') {
-          const result = await deidentifyText(text, excludeList)
+          const result = await deidentifyText(text, categories)
           setOutputText(result.text)
           setMapping(result.mapping)
           setOutputTitle('De-identified')
         } else {
-          setOutputText(await anonymizeText(text, excludeList))
+          setOutputText(await anonymizeText(text, categories))
           setOutputTitle('Anonymized')
         }
       }
@@ -126,12 +135,30 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
 
         {entities && (
           <details className="exclude-panel">
-            <summary>Exclude categories (never detect)</summary>
+            <summary>
+              Categories to detect ({selected.size}/{entities.length} selected)
+            </summary>
+            <div className="select-buttons">
+              <button
+                type="button"
+                className="btn-secondary btn-small"
+                onClick={() => setSelected(new Set(entities))}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-small"
+                onClick={() => setSelected(new Set())}
+              >
+                Deselect all
+              </button>
+            </div>
             <div className="exclude-columns">
               <div>
                 {entities.map((c) => (
                   <label key={c} className="checkbox-row">
-                    <input type="checkbox" checked={exclude.has(c)} onChange={() => toggle(c)} />
+                    <input type="checkbox" checked={selected.has(c)} onChange={() => toggle(c)} />
                     {c}
                   </label>
                 ))}
@@ -157,7 +184,12 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
               <option value="deidentify">De-identify</option>
             </select>
           </label>
-          <button type="button" className="primary-btn" onClick={run} disabled={!text.trim() || !ready || loading}>
+          <button
+            type="button"
+            className="primary-btn"
+            onClick={run}
+            disabled={!text.trim() || !ready || loading || selected.size === 0}
+          >
             {loading ? 'Working…' : ACTION_BUTTON_LABELS[action]}
           </button>
         </div>

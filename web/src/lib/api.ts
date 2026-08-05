@@ -46,10 +46,10 @@ export async function getTextEntities(): Promise<{ text: string[] }> {
   return res.json()
 }
 
-export async function detect(file: File, exclude?: string[]): Promise<PIIEntity[]> {
+export async function detect(file: File, categories?: string[]): Promise<PIIEntity[]> {
   const form = new FormData()
   form.append('file', file)
-  const qs = exclude?.length ? `?exclude=${encodeURIComponent(exclude.join(','))}` : ''
+  const qs = categories?.length ? `?categories=${encodeURIComponent(categories.join(','))}` : ''
   const res = await assertOk(await fetch(`/detect${qs}`, { method: 'POST', body: form }))
   const data = await res.json()
   return data.entities as PIIEntity[]
@@ -63,23 +63,23 @@ export async function redact(
   file: File,
   mode: RedactMode,
   color: [number, number, number],
-  exclude?: string[],
+  categories?: string[],
 ): Promise<Blob> {
   const form = new FormData()
   form.append('file', file)
   form.append('mode', mode)
   form.append('color', rgbToHex(color))
-  const qs = exclude?.length ? `?exclude=${encodeURIComponent(exclude.join(','))}` : ''
+  const qs = categories?.length ? `?categories=${encodeURIComponent(categories.join(','))}` : ''
   const res = await assertOk(await fetch(`/redact${qs}`, { method: 'POST', body: form }))
   return res.blob()
 }
 
-export async function detectText(text: string, exclude?: string[]): Promise<TextPIISpan[]> {
+export async function detectText(text: string, categories?: string[]): Promise<TextPIISpan[]> {
   const res = await assertOk(
     await fetch('/detect-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, exclude }),
+      body: JSON.stringify({ text, categories }),
     }),
   )
   const data = await res.json()
@@ -104,39 +104,39 @@ async function postJson(path: string, body: unknown): Promise<any> {
   return res.json()
 }
 
-export async function redactText(text: string, exclude?: string[]): Promise<string> {
-  const data = await postJson('/redact-text', { text, exclude, mask: '[{category}]' })
+export async function redactText(text: string, categories?: string[]): Promise<string> {
+  const data = await postJson('/redact-text', { text, categories, mask: '[{category}]' })
   return data.text
 }
 
 export async function deidentifyText(
   text: string,
-  exclude?: string[],
+  categories?: string[],
 ): Promise<{ text: string; mapping: PseudonymMapping }> {
-  return postJson('/deidentify-text', { text, exclude })
+  return postJson('/deidentify-text', { text, categories })
 }
 
-export async function anonymizeText(text: string, exclude?: string[]): Promise<string> {
-  const data = await postJson('/anonymize-text', { text, exclude })
+export async function anonymizeText(text: string, categories?: string[]): Promise<string> {
+  const data = await postJson('/anonymize-text', { text, categories })
   return data.text
 }
 
 export async function deidentifyImage(
   file: File,
-  exclude?: string[],
+  categories?: string[],
 ): Promise<{ imageUrl: string; mapping: PseudonymMapping }> {
   const form = new FormData()
   form.append('file', file)
-  const qs = exclude?.length ? `?exclude=${encodeURIComponent(exclude.join(','))}` : ''
+  const qs = categories?.length ? `?categories=${encodeURIComponent(categories.join(','))}` : ''
   const res = await assertOk(await fetch(`/deidentify${qs}`, { method: 'POST', body: form }))
   const data = await res.json()
   return { imageUrl: `data:image/png;base64,${data.image}`, mapping: data.mapping }
 }
 
-export async function anonymizeImage(file: File, exclude?: string[]): Promise<Blob> {
+export async function anonymizeImage(file: File, categories?: string[]): Promise<Blob> {
   const form = new FormData()
   form.append('file', file)
-  const qs = exclude?.length ? `?exclude=${encodeURIComponent(exclude.join(','))}` : ''
+  const qs = categories?.length ? `?categories=${encodeURIComponent(categories.join(','))}` : ''
   const res = await assertOk(await fetch(`/anonymize${qs}`, { method: 'POST', body: form }))
   return res.blob()
 }

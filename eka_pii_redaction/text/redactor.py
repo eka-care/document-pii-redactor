@@ -97,19 +97,20 @@ class TextPIIRedactor:
         hf_repo: str = DEFAULT_HF_REPO,
         *,
         device: Optional[str] = None,
-        exclude_entities: Optional[Iterable[str]] = None,
+        categories: Optional[Iterable[str]] = None,
         cache_dir: Optional[str] = None,
     ):
         """
         Args:
             hf_repo: Hugging Face repo id (or a local dir) holding the weights.
             device: "cuda" / "cpu". None -> auto (cuda if available, else cpu).
-            exclude_entities: categories to never detect/redact. Default: none.
+            categories: the categories to detect. Default None = all of them.
         """
         import torch
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self._excluded = set(validate_entities(exclude_entities))
+        self._categories = (set(validate_entities(categories))
+                            if categories is not None else None)
 
         # Imported here so a missing torch/transformers only bites at construction,
         # and the pure helpers above stay importable for tests.
@@ -123,20 +124,25 @@ class TextPIIRedactor:
         """Return all categories the text modality can detect/redact."""
         return list(TEXT_REDACTABLE)
 
-    def _active_exclusions(self, extra: Optional[Iterable[str]]) -> set:
-        e = set(validate_entities(extra)) if extra else set()
-        return self._excluded | e
+    def _active_categories(self, per_call: Optional[Iterable[str]]):
+        if per_call is not None:
+            return set(validate_entities(per_call))
+        return self._categories  # None -> all categories
 
     def detect(
-        self, text: str, *, exclude_entities: Optional[Iterable[str]] = None
+        self, text: str, *, categories: Optional[Iterable[str]] = None
     ) -> "list[TextPIISpan]":
         """Detect PII spans in `text`. Each TextPIISpan has `category`, `start`,
         `end` (char offsets), `l1`, `text`, `score`.
 
-        `exclude_entities` (per-call) is unioned with the constructor's exclusions.
+        `categories` selects which categories to detect (default: all);
+        given per-call it overrides the constructor's selection.
         """
-        excluded = self._active_exclusions(exclude_entities)
-        return [s for s in self.minilm.detect(text) if s.category not in excluded]
+        wanted = self._active_categories(categories)
+        spans = self.minilm.detect(text)
+        if wanted is None:
+            return spans
+        return [s for s in spans if s.category in wanted]
 
     def redact(
         self,

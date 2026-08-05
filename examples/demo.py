@@ -14,7 +14,8 @@ def main():
                     help="HF repo id or a local dir with image/layoutlmv3/ + image/yolo/best.pt")
     ap.add_argument("--no-visual", action="store_true", help="text PII only")
     ap.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
-    ap.add_argument("--exclude", default="", help="comma-separated categories to skip")
+    ap.add_argument("--categories", default="",
+                    help="comma-separated categories to detect (default: all)")
     ap.add_argument("--mode", default="solid", choices=["solid", "blur", "pixelate"])
     ap.add_argument("--out", default="redacted.png")
     args = ap.parse_args()
@@ -23,7 +24,7 @@ def main():
         args.hf_repo,
         detect_visual=not args.no_visual,
         device=args.device,
-        exclude_entities=[s for s in args.exclude.split(",") if s] or None,
+        categories=[s for s in args.categories.split(",") if s] or None,
     )
 
     entities = redactor.detect(args.image)

@@ -49,8 +49,12 @@ export default function ImageTab({
   const [action, setAction] = useState<Action>('redact')
   const [mode, setMode] = useState<RedactMode>('blur')
   const [color, setColor] = useState('#000000')
-  const [excludeText, setExcludeText] = useState<Set<string>>(new Set())
-  const [excludeVisual, setExcludeVisual] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // All categories selected by default, once the taxonomy arrives.
+  useEffect(() => {
+    if (taxonomy) setSelected(new Set([...taxonomy.text, ...taxonomy.visual]))
+  }, [taxonomy])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -115,40 +119,43 @@ export default function ImageTab({
     pickFile(f)
   }
 
-  function toggle(set: Set<string>, setter: (s: Set<string>) => void, value: string) {
-    const next = new Set(set)
+  function toggle(value: string) {
+    const next = new Set(selected)
     if (next.has(value)) next.delete(value)
     else next.add(value)
-    setter(next)
+    setSelected(next)
   }
 
-  const exclude = [...excludeText, ...excludeVisual]
+  const totalCategories = taxonomy ? taxonomy.text.length + taxonomy.visual.length : 0
+  const allSelected = taxonomy != null && selected.size === totalCategories
+  // Omit the param entirely when everything is selected (= server default).
+  const categories = allSelected ? undefined : [...selected]
 
   async function run() {
-    if (!file) return
+    if (!file || selected.size === 0) return
     setLoading(true)
     setError(null)
     setMapping(null)
     try {
-      const detecting = detect(file, exclude)
+      const detecting = detect(file, categories)
       if (action === 'redact') {
         const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16)) as [
           number,
           number,
           number,
         ]
-        const [ents, blob] = await Promise.all([detecting, redact(file, mode, rgb, exclude)])
+        const [ents, blob] = await Promise.all([detecting, redact(file, mode, rgb, categories)])
         setDetectedEntities(ents)
         setRedactedUrl(URL.createObjectURL(blob))
         setResultTitle(`Redacted · ${mode}`)
       } else if (action === 'deidentify') {
-        const [ents, result] = await Promise.all([detecting, deidentifyImage(file, exclude)])
+        const [ents, result] = await Promise.all([detecting, deidentifyImage(file, categories)])
         setDetectedEntities(ents)
         setRedactedUrl(result.imageUrl)
         setMapping(result.mapping)
         setResultTitle('De-identified')
       } else {
-        const [ents, blob] = await Promise.all([detecting, anonymizeImage(file, exclude)])
+        const [ents, blob] = await Promise.all([detecting, anonymizeImage(file, categories)])
         setDetectedEntities(ents)
         setRedactedUrl(URL.createObjectURL(blob))
         setResultTitle('Anonymized')
@@ -238,7 +245,25 @@ export default function ImageTab({
 
           {taxonomy && (
             <details className="exclude-panel">
-              <summary>Exclude categories (never detect/redact)</summary>
+              <summary>
+                Categories to detect ({selected.size}/{totalCategories} selected)
+              </summary>
+              <div className="select-buttons">
+                <button
+                  type="button"
+                  className="btn-secondary btn-small"
+                  onClick={() => setSelected(new Set([...taxonomy.text, ...taxonomy.visual]))}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary btn-small"
+                  onClick={() => setSelected(new Set())}
+                >
+                  Deselect all
+                </button>
+              </div>
               <div className="exclude-columns">
                 <div>
                   <h3 className="exclude-heading">Text</h3>
@@ -246,8 +271,8 @@ export default function ImageTab({
                     <label key={c} className="checkbox-row">
                       <input
                         type="checkbox"
-                        checked={excludeText.has(c)}
-                        onChange={() => toggle(excludeText, setExcludeText, c)}
+                        checked={selected.has(c)}
+                        onChange={() => toggle(c)}
                       />
                       {c}
                     </label>
@@ -259,8 +284,8 @@ export default function ImageTab({
                     <label key={c} className="checkbox-row">
                       <input
                         type="checkbox"
-                        checked={excludeVisual.has(c)}
-                        onChange={() => toggle(excludeVisual, setExcludeVisual, c)}
+                        checked={selected.has(c)}
+                        onChange={() => toggle(c)}
                       />
                       {c}
                     </label>
@@ -272,9 +297,17 @@ export default function ImageTab({
         </section>
       </div>
 
-      <button type="button" className="primary-btn" onClick={run} disabled={!file || !ready || loading}>
+      <button
+        type="button"
+        className="primary-btn"
+        onClick={run}
+        disabled={!file || !ready || loading || selected.size === 0}
+      >
         {loading ? 'Working…' : ACTION_BUTTON_LABELS[action]}
       </button>
+      {selected.size === 0 && (
+        <p className="tab-caption">Select at least one category to run.</p>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
 
