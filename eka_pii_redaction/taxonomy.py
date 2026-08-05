@@ -6,7 +6,7 @@ Two kinds of entities:
   - VISUAL entities: 6 image-region categories predicted by the YOLO detector.
 
 These names are the canonical category strings used everywhere in the public API
-(`detect()` results, `exclude_entities=[...]`, `list_entities()`).
+(`detect()` results, `categories=[...]`, `list_entities()`).
 """
 from __future__ import annotations
 

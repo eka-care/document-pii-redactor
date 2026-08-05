@@ -14,7 +14,7 @@ Config via env vars (read at startup):
     EKA_PII_HF_REPO        Hugging Face repo id or local dir (default ekacare/pii-redactors)
     EKA_PII_DETECT_VISUAL  "1"/"0"  (default 1)
     EKA_PII_DEVICE         "cuda"/"cpu" (default auto)
-    EKA_PII_EXCLUDE        comma-separated categories to exclude (default none)
+    EKA_PII_CATEGORIES     comma-separated categories to detect (default: all)
 """
 from __future__ import annotations
 
@@ -32,11 +32,11 @@ _redactor: ImagePIIRedactor | None = None
 _text_redactor = None  # built lazily on first /detect-text or /redact-text call
 
 
-def _parse_exclude(exclude: str | None) -> list[str] | None:
-    """Comma-separated query param -> list, or None if empty/absent."""
-    if not exclude:
+def _parse_categories(categories: str | None) -> list[str] | None:
+    """Comma-separated query param -> list, or None (= all) if empty/absent."""
+    if not categories:
         return None
-    return [s for s in exclude.split(",") if s]
+    return [s for s in categories.split(",") if s]
 
 
 def _parse_hex_color(color: str) -> tuple[int, int, int]:
@@ -46,35 +46,42 @@ def _parse_hex_color(color: str) -> tuple[int, int, int]:
 
 class _TextIn(BaseModel):
     text: str
-    exclude: list[str] | None = None
+    categories: list[str] | None = None  # None = all
 
 
 class _RedactTextIn(BaseModel):
     text: str
     mask: str = "[REDACTED]"
-    exclude: list[str] | None = None
+    categories: list[str] | None = None
 
 
 class _DeidTextIn(BaseModel):
     text: str
-    exclude: list[str] | None = None
+    categories: list[str] | None = None
     mapping: dict | None = None  # a prior call's mapping, to continue numbering
+
+
+def _env_categories(only_text: bool = False) -> list[str] | None:
+    raw = [s for s in os.environ.get("EKA_PII_CATEGORIES", "").split(",") if s]
+    if not raw:
+        return None
+    if only_text:
+        # The env list may name visual categories (for the image model); keep
+        # only the ones the text model knows so construction doesn't error.
+        from .taxonomy import TEXT_REDACTABLE
+        raw = [c for c in raw if c in TEXT_REDACTABLE]
+    return raw or None
 
 
 def _get_text():
     global _text_redactor
     if _text_redactor is None:
-        from .taxonomy import TEXT_REDACTABLE
         from .text import TextPIIRedactor
 
-        raw = [s for s in os.environ.get("EKA_PII_EXCLUDE", "").split(",") if s]
-        # EKA_PII_EXCLUDE may name visual categories (for the image model); keep
-        # only the ones the text model knows so construction doesn't error.
-        exclude = [e for e in raw if e in TEXT_REDACTABLE]
         _text_redactor = TextPIIRedactor(
             hf_repo=os.environ.get("EKA_PII_HF_REPO", DEFAULT_HF_REPO),
             device=os.environ.get("EKA_PII_DEVICE") or None,
-            exclude_entities=exclude or None,
+            categories=_env_categories(only_text=True),
         )
     return _text_redactor
 
@@ -82,12 +89,11 @@ def _get_text():
 def _get() -> ImagePIIRedactor:
     global _redactor
     if _redactor is None:
-        exclude = [s for s in os.environ.get("EKA_PII_EXCLUDE", "").split(",") if s]
         _redactor = ImagePIIRedactor(
             hf_repo=os.environ.get("EKA_PII_HF_REPO", DEFAULT_HF_REPO),
             detect_visual=os.environ.get("EKA_PII_DETECT_VISUAL", "1") == "1",
             device=os.environ.get("EKA_PII_DEVICE") or None,
-            exclude_entities=exclude or None,
+            categories=_env_categories(),
         )
     return _redactor
 
@@ -109,9 +115,9 @@ def entities():
 
 
 @app.post("/detect")
-async def detect(file: UploadFile = File(...), exclude: str | None = Query(None)):
+async def detect(file: UploadFile = File(...), categories: str | None = Query(None)):
     data = await file.read()
-    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    ents = _get().detect(data, categories=_parse_categories(categories))
     return JSONResponse({"entities": [e.to_dict() for e in ents]})
 
 
@@ -120,10 +126,10 @@ async def redact(
     file: UploadFile = File(...),
     mode: str = Form("solid"),
     color: str = Form("000000"),
-    exclude: str | None = Query(None),
+    categories: str | None = Query(None),
 ):
     data = await file.read()
-    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    ents = _get().detect(data, categories=_parse_categories(categories))
     img = _get().redact(data, ents, mode=mode, color=_parse_hex_color(color))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -138,13 +144,13 @@ def entities_text():
 
 @app.post("/detect-text")
 def detect_text(body: _TextIn):
-    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
+    spans = _get_text().detect(body.text, categories=body.categories)
     return {"spans": [s.to_dict() for s in spans]}
 
 
 @app.post("/redact-text")
 def redact_text(body: _RedactTextIn):
-    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
+    spans = _get_text().detect(body.text, categories=body.categories)
     return {"text": _get_text().redact(body.text, spans, mask=body.mask)}
 
 
@@ -152,7 +158,7 @@ def redact_text(body: _RedactTextIn):
 def deidentify_text(body: _DeidTextIn):
     from .pseudonym import PseudonymMapping
 
-    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
+    spans = _get_text().detect(body.text, categories=body.categories)
     result = _get_text().deidentify(
         body.text, spans, mapping=PseudonymMapping.from_dict(body.mapping))
     return {"text": result.text, "mapping": result.mapping.to_dict()}
@@ -160,18 +166,18 @@ def deidentify_text(body: _DeidTextIn):
 
 @app.post("/anonymize-text")
 def anonymize_text(body: _TextIn):
-    spans = _get_text().detect(body.text, exclude_entities=body.exclude)
+    spans = _get_text().detect(body.text, categories=body.categories)
     return {"text": _get_text().anonymize(body.text, spans)}
 
 
 @app.post("/deidentify")
-async def deidentify(file: UploadFile = File(...), exclude: str | None = Query(None)):
+async def deidentify(file: UploadFile = File(...), categories: str | None = Query(None)):
     # JSON (base64 PNG + mapping) rather than an image response — the mapping
     # has to ride along with the image it de-identifies.
     import base64
 
     data = await file.read()
-    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    ents = _get().detect(data, categories=_parse_categories(categories))
     result = _get().deidentify(data, ents)
     buf = io.BytesIO()
     result.image.save(buf, format="PNG")
@@ -182,9 +188,9 @@ async def deidentify(file: UploadFile = File(...), exclude: str | None = Query(N
 
 
 @app.post("/anonymize")
-async def anonymize(file: UploadFile = File(...), exclude: str | None = Query(None)):
+async def anonymize(file: UploadFile = File(...), categories: str | None = Query(None)):
     data = await file.read()
-    ents = _get().detect(data, exclude_entities=_parse_exclude(exclude))
+    ents = _get().detect(data, categories=_parse_categories(categories))
     img = _get().anonymize(data, ents)
     buf = io.BytesIO()
     img.save(buf, format="PNG")

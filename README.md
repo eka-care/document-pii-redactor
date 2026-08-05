@@ -18,7 +18,7 @@ stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**
   repo id.
 - **Text + visual** in one call, or text-only if you don't need the detector.
 - **CPU or GPU** — auto-selects CUDA if available, else CPU.
-- **Choose what to process** — exclude any categories; everything is on by default.
+- **Choose what to process** — select the categories to detect; all of them by default.
 - Returns a structured **entity list** (`text`, `bbox`, `category`, …) and/or a
   transformed image/string.
 
@@ -75,7 +75,7 @@ redactor = ImagePIIRedactor(
     detect_visual=True,          # set False to skip visual entities (QR codes,
                                   # face photos, signatures, etc.) — text PII only
     # device="cpu",              # force CPU (default: auto)
-    # exclude_entities=["logo", "brandname"],  # never detect these
+    # categories=["primary_subject_name", "phone_mobile"],  # detect only these (default: all)
 )
 
 entities = redactor.detect("page.jpg")
@@ -140,7 +140,7 @@ of the input.) De-identification consistency is per exact surface form
 
 ```python
 ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
-                  exclude_entities=None, visual_score_threshold=0.25,
+                  categories=None, visual_score_threshold=0.25,
                   ocr_lang=None, cache_dir=None)
 ```
 
@@ -149,14 +149,14 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 | `hf_repo` | HF repo id **or** a local dir with `text_model/` + `visual_model/best.pt`. |
 | `detect_visual` | If `False`, visual entities (QR codes, face photos, signatures, etc.) are **not** downloaded or loaded — text PII only. |
 | `device` | `"cuda"` / `"cpu"`. `None` → auto (CUDA if available). |
-| `exclude_entities` | Categories to never detect/redact. Default: none excluded (all on). |
+| `categories` | The categories to detect. Default `None` = all of them. |
 | `visual_score_threshold` | Visual-entity confidence cutoff. |
 | `ocr_lang` | Tesseract language/script, e.g. `"eng"`, `"eng+Devanagari"`. |
 
 ### detect
 
 ```python
-detect(image, *, exclude_entities=None, ocr_lang=None) -> list[PIIEntity]
+detect(image, *, categories=None, ocr_lang=None) -> list[PIIEntity]
 ```
 
 Each `PIIEntity` has:
@@ -180,7 +180,7 @@ Returns a redacted copy. `mode` ∈ `solid` | `blur` | `pixelate`. All
 transforms (`redact` / `anonymize` / `deidentify`, both modalities) take a
 `detect()` result as their second argument — `entities` for images, `spans`
 for text. Detection is the only step that runs the models; per-call
-`exclude_entities` / `ocr_lang` therefore live on `detect()`.
+`categories` / `ocr_lang` therefore live on `detect()`.
 
 ### list_entities
 
@@ -225,11 +225,12 @@ docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 eka-pii-redaction
 Open `http://localhost:7860` for the UI. API endpoints: `GET /health`,
 `GET /entities`, `GET /entities-text`,
 `POST /detect` / `POST /redact` / `POST /anonymize` (multipart `file`,
-optional `exclude` query param, `mode`/`color` form fields for `/redact`),
+optional `categories` query param (comma-separated; absent = all),
+`mode`/`color` form fields for `/redact`),
 `POST /deidentify` (multipart `file` → JSON `{"image": <base64 png>,
 "mapping": ...}`), and `POST /detect-text` / `POST /redact-text` /
 `POST /deidentify-text` / `POST /anonymize-text`
-(JSON `{"text": ..., "exclude": [...]}`; `/deidentify-text` also accepts
+(JSON `{"text": ..., "categories": [...]}`; `/deidentify-text` also accepts
 `"mapping"` from a prior call and returns the updated one).
 Env: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`, `EKA_PII_EXCLUDE`.
 

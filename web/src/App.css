@@ -300,6 +300,17 @@ input:disabled {
   color: var(--muted);
 }
 
+.select-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-small {
+  padding: 5px 12px;
+  font-size: 0.78rem;
+}
+
 .exclude-columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
