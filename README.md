@@ -276,17 +276,6 @@ kept out of this tracked README because GitHub and PyPI would render it as
 literal text. The Space reads the model via an `HF_TOKEN` repository secret
 (Space → Settings → Repository secrets).
 
-## Publishing the model weights
-
-The trained checkpoints are assembled into the single HF repo with:
-
-```bash
-python scripts/build_hf_repo.py \
-  --layoutlmv3   .../checkpoints/base_v3_combined_4ep/final \
-  --yolo-weights .../checkpoints/visual/visual_yolo11m/weights/best.pt \
-  --out /tmp/eka-pii-hf --push --repo-id ekacare/pii-redactors
-```
-
 ## How it works (image modality)
 
 1. **Text-in-image:** Tesseract OCR (via the processor) → words + boxes →
