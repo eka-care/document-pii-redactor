@@ -235,9 +235,7 @@ with tab_img:
 
         with st.spinner("Redacting…"):
             redacted = image_redactor.redact(
-                image, mode=redact_mode, color=redact_color,
-                exclude_entities=img_exclude, ocr_lang=OCR_LANG,
-            )
+                image, entities, mode=redact_mode, color=redact_color)
         col_a, col_b = st.columns(2)
         with col_a:
             st.caption("Detections")

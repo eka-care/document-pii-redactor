@@ -27,6 +27,7 @@ def test_detect_finds_email_and_name(redactor):
 
 def test_redact_removes_email_text(redactor):
     text = "Reach me at john.doe@example.com please."
-    out = redactor.redact(text, mask="[{category}]")
+    spans = redactor.detect(text)
+    out = redactor.redact(text, spans, mask="[{category}]")
     assert "john.doe@example.com" not in out
     assert "[email]" in out

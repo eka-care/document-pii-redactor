@@ -102,17 +102,17 @@ with **character** offsets. `detect()` (image) accepts a file path, raw
 
 ### Feed detections into transforms
 
-Every transform accepts a prior `detect()` result (`entities=` for images,
-`spans=` for text) — detection runs once, transforms reuse it. Called without
-it, each transform just detects internally.
+Every transform takes a `detect()` result as its second argument (`entities`
+for images, `spans` for text). Detection is always the explicit first step —
+it runs once, and every transform consumes its output.
 
 ```python
 # --- Image: one detection, three outputs ---
 entities = redactor.detect("page.jpg")
 
-redactor.redact("page.jpg", mode="blur", entities=entities).save("redacted.png")
-redactor.anonymize("page.jpg", entities=entities).save("anonymized.png")
-deid = redactor.deidentify("page.jpg", entities=entities)   # ImageDeidResult
+redactor.redact("page.jpg", entities, mode="blur").save("redacted.png")
+redactor.anonymize("page.jpg", entities).save("anonymized.png")
+deid = redactor.deidentify("page.jpg", entities)   # ImageDeidResult
 deid.image.save("deidentified.png")      # pseudonyms rendered in place;
                                           # faces/signatures become placeholders
 deid.mapping.to_dict()                   # store securely to re-link later
@@ -121,10 +121,10 @@ deid.mapping.to_dict()                   # store securely to re-link later
 text = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka."
 spans = r.detect(text)
 
-r.redact(text, mask="[{category}]", spans=spans)
-r.anonymize(text, spans=spans)
+r.redact(text, spans, mask="[{category}]")
+r.anonymize(text, spans)
 # -> "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."  (no mapping exists)
-result = r.deidentify(text, spans=spans)
+result = r.deidentify(text, spans)
 result.text      # -> "Person_1, Age_1 yrs, DOB Date_1, City_1, State_1."
 result.mapping   # entity -> pseudonym map; pass mapping=result.mapping on the
                  # next page of the same record to keep numbering consistent
@@ -173,14 +173,14 @@ Each `PIIEntity` has:
 ### redact
 
 ```python
-redact(image, *, mode="solid", color=(0,0,0), exclude_entities=None,
-       ocr_lang=None, pad=2, entities=None) -> PIL.Image
+redact(image, entities, *, mode="solid", color=(0,0,0), pad=2) -> PIL.Image
 ```
 
 Returns a redacted copy. `mode` ∈ `solid` | `blur` | `pixelate`. All
-transforms (`redact` / `anonymize` / `deidentify`, both modalities) accept a
-prior `detect()` result — `entities=` for images, `spans=` for text — so
-detection runs once.
+transforms (`redact` / `anonymize` / `deidentify`, both modalities) take a
+`detect()` result as their second argument — `entities` for images, `spans`
+for text. Detection is the only step that runs the models; per-call
+`exclude_entities` / `ocr_lang` therefore live on `detect()`.
 
 ### list_entities
 
