@@ -1,0 +1,8 @@
+Eka-PII-redaction
+Copyright 2026 Eka Care (https://www.eka.care)
+
+This product includes software developed by Eka Care:
+https://github.com/eka-care/Eka-PII-redactors
+
+Model weights are distributed separately under CC-BY-4.0:
+https://huggingface.co/ekacare/pii-redactors
