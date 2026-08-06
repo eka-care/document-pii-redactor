@@ -31,7 +31,9 @@ stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**
 From PyPI:
 
 ```bash
-pip install eka-pii-redaction          # core library
+pip install eka-pii-redaction            # core: text + OCR pipelines (permissive)
+pip install "eka-pii-redaction[visual]"  # + visual-entity detection (AGPL-3.0 —
+                                          #   pulls in ultralytics; see License)
 pip install "eka-pii-redaction[server]"  # + FastAPI service
 ```
 
@@ -287,10 +289,21 @@ literal text. The Space reads the model via an `HF_TOKEN` repository secret
 ## License & citation
 
 - **Code**: [Apache-2.0](LICENSE). Redistributions must carry the
-  [NOTICE](NOTICE) attribution.
-- **Model weights** ([`ekacare/pii-redactors`](https://huggingface.co/ekacare/pii-redactors)):
-  **CC-BY-4.0** — free to use, including commercially, but public use or
-  redistribution requires crediting Eka Care with a link back.
+  [NOTICE](NOTICE) attribution. The optional `[visual]` extra installs
+  [ultralytics](https://github.com/ultralytics/ultralytics) (**AGPL-3.0**) —
+  using it brings AGPL obligations; the core install stays permissive.
+- **Model weights** ([`ekacare/pii-redactors`](https://huggingface.co/ekacare/pii-redactors))
+  are licensed **per model**, following each base model's license:
+
+  | weights | fine-tuned from | license |
+  |---|---|---|
+  | `text/minilm/` (plain-text PII) | Multilingual MiniLM (MIT) | **CC-BY-4.0** — free use incl. commercial, credit Eka Care |
+  | `image/layoutlmv3/` (text-in-image PII) | `microsoft/layoutlmv3-base` | **CC-BY-NC-SA-4.0** — **non-commercial only**, ShareAlike |
+  | `image/yolo/best.pt` (visual entities) | YOLO11m (Ultralytics) | **AGPL-3.0** |
+
+  The text-only pipeline (`TextPIIRedactor`) therefore has a fully
+  permissive lineage; the image pipeline currently inherits its bases'
+  restrictions. See the model card for details.
 
 If you use this library or the models, please cite us:
 

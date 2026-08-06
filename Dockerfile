@@ -43,7 +43,7 @@ COPY --from=web-builder /web/dist /app/web/dist
 # Install the package + the API server extra. --break-system-packages: this
 # base image's Python is externally-managed (PEP 668); safe here since the
 # container is single-purpose and isolated.
-RUN pip install --no-cache-dir --break-system-packages ".[server]"
+RUN pip install --no-cache-dir --break-system-packages ".[server,visual]"
 
 EXPOSE 7860
 CMD ["uvicorn", "eka_pii_redaction.server:app", "--host", "0.0.0.0", "--port", "7860"]
