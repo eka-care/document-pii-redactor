@@ -283,3 +283,24 @@ literal text. The Space reads the model via an `HF_TOKEN` repository secret
    token classifier → per-word BIO labels → merged spans.
 2. **Visual:** a detector over the page → boxes + categories.
 3. **Redact:** fill / blur / pixelate every selected entity's box.
+
+## License & citation
+
+- **Code**: [Apache-2.0](LICENSE). Redistributions must carry the
+  [NOTICE](NOTICE) attribution.
+- **Model weights** ([`ekacare/pii-redactors`](https://huggingface.co/ekacare/pii-redactors)):
+  **CC-BY-4.0** — free to use, including commercially, but public use or
+  redistribution requires crediting Eka Care with a link back.
+
+If you use this library or the models, please cite us:
+
+```bibtex
+@software{eka_pii_redaction,
+  author = {{Eka Care}},
+  title  = {Eka-PII-redaction: detect, redact, de-identify, or anonymize
+            PII in document images and plain text},
+  year   = {2026},
+  url    = {https://github.com/eka-care/Eka-PII-redactors},
+  note   = {Model weights: https://huggingface.co/ekacare/pii-redactors}
+}
+```

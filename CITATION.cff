@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this library or the models, please cite it as below."
+title: "Eka-PII-redaction"
+type: software
+authors:
+  - name: "Eka Care"
+    website: "https://www.eka.care"
+repository-code: "https://github.com/eka-care/Eka-PII-redactors"
+url: "https://huggingface.co/ekacare/pii-redactors"
+license: Apache-2.0
