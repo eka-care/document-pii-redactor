@@ -68,13 +68,7 @@ text  = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Bangalore. Contact: 
 spans = r.detect(text)
 ```
 
-Every image below is the library's **real, unretouched output** on page 1 of a
-genuine Indian lab report (a CBC panel). Name, DOB, IDs, dates, doctor,
-signature, QR codes, barcodes — all caught. Notice what *doesn't* change:
-every medical value survives untouched. Only identity is removed. (The
-unprocessed original is withheld — it is a real person's medical record.)
-
-### Redact — destroy
+**Redact** — destroy:
 
 ```python
 redactor.redact("report.png", entities, mode="blur").save("redacted.png")  # or "solid" / "pixelate"
@@ -83,13 +77,9 @@ r.redact(text, spans)
 # '[REDACTED], [REDACTED] yrs, DOB [REDACTED], [REDACTED], [REDACTED]. Contact: [REDACTED].'
 ```
 
-<img src="assets/showcase/redacted.png" width="100%" alt="Lab report with every PII region blurred; all medical values intact">
-
-### Anonymize — generalize
-
-One-way, no mapping kept. Ages become 10-year buckets, dates keep only the
-year, fine geography collapses to `[LOCATION]` (state and country survive),
-everything else becomes an unnumbered token:
+**Anonymize** — generalize, one-way, no mapping kept. Ages become 10-year
+buckets, dates keep only the year, fine geography collapses to `[LOCATION]`
+(state and country survive), everything else becomes an unnumbered token:
 
 ```python
 redactor.anonymize("report.png", entities).save("anonymized.png")
@@ -98,34 +88,21 @@ r.anonymize(text, spans)
 # '[PERSON], 40–49 yrs, DOB 1979, [LOCATION], [LOCATION]. Contact: [PHONE].'
 ```
 
-<img src="assets/showcase/anonymized.png" width="100%" alt="Lab report with PII generalized: black boxes, [PERSON]/[MRN]/[LOCATION] tokens, dates reduced to years, state kept">
-
-### De-identify — pseudonymize
-
-Every entity becomes a consistent pseudonym — the same value gets the same
-pseudonym everywhere in the document — and you get the entity→pseudonym
-mapping back, so an authorized caller can re-link later:
+**De-identify** — pseudonymize. Same value → same pseudonym throughout the
+document, and the entity→pseudonym mapping comes back for authorized
+re-linking. `strategy="hash"` gives tokens that stay stable across documents
+with no mapping to thread (`secret=` salts the hash):
 
 ```python
-deid = redactor.deidentify("report.png", entities)
+deid = redactor.deidentify("report.png", entities)    # .image + .mapping
 deid.image.save("deidentified.png")
-deid.mapping.entries["Person"]                # {'Person_1': 'Mrs …', 'Person_2': 'Dr …'}
 
-result = r.deidentify(text, spans)
-result.text
+r.deidentify(text, spans).text
 # 'Person_1, Age_1 yrs, DOB Date_1, City_1, City_2. Contact: Phone_1.'
-```
 
-Need tokens that stay stable across *documents*, with no mapping to thread?
-Use hash tokens — globally deterministic, and `secret=` salts the hash so
-guessable values can't be dictionary-reversed:
-
-```python
 r.deidentify(text, spans, strategy="hash").text
 # 'Person_539681, Age_6c8349 yrs, DOB Date_7f19c4, City_d12704, City_60c7d5. Contact: Phone_d57003.'
 ```
-
-<img src="assets/showcase/deidentified.png" width="100%" alt="Lab report with PII replaced by typed pseudonyms: Person_1, MRN_1, Date_1, gray [QR]/[SIGNATURE] placeholders">
 
 Good to know:
 
@@ -136,6 +113,9 @@ Good to know:
 - Sequential pseudonyms are scoped to the returned `mapping` — pass
   `mapping=result.mapping` on the next page of the same record to keep
   numbering consistent. Hash tokens need no threading.
+
+For a runnable end-to-end walkthrough, see
+[`examples/quickstart.ipynb`](examples/quickstart.ipynb).
 
 <details>
 <summary><b>API reference</b></summary>
