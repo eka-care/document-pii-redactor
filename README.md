@@ -46,9 +46,9 @@ pip install -e .            # core library
 pip install -e ".[server]"  # + FastAPI service
 ```
 
-System dependency: **Tesseract OCR** — required for the **image** modality
-(it OCRs the document before the text-in-image classifier runs on the
-words); not needed for the text-only modality.
+System dependency: **Tesseract OCR** — used by the **image** modality's
+built-in OCR step. Not needed for the text-only modality, nor if you bring
+your own OCR (`detect(..., words=..., boxes=...)`).
 
 ```bash
 # Debian/Ubuntu
@@ -83,6 +83,19 @@ redactor = ImagePIIRedactor(
 entities = redactor.detect("page.jpg")
 for e in entities:
     print(e.kind, e.category, e.bbox, e.text, e.score)
+```
+
+**Bring your own OCR.** The built-in path runs Tesseract, but you can pass
+your own OCR output instead — one `[x0, y0, x1, y1]` box per word, in
+original-image pixel coordinates. Tesseract is skipped and your exact boxes
+come back on the emitted entities:
+
+```python
+entities = redactor.detect(
+    "page.jpg",
+    words=["Patient:", "John", "Doe"],
+    boxes=[[20, 20, 90, 40], [100, 20, 140, 40], [145, 20, 180, 40]],
+)
 ```
 
 ### Detect — plain text
@@ -158,8 +171,14 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 ### detect
 
 ```python
-detect(image, *, categories=None, ocr_lang=None) -> list[PIIEntity]
+detect(image, *, categories=None, ocr_lang=None,
+       words=None, boxes=None) -> list[PIIEntity]
 ```
+
+`words` + `boxes` (pixel-coordinate word boxes, passed together) bring your
+own OCR: the Tesseract step is skipped and your boxes pass through to the
+entities. Without them the built-in Tesseract path runs, honoring
+`ocr_lang`.
 
 Each `PIIEntity` has:
 
@@ -281,8 +300,9 @@ literal text. The Space reads the model via an `HF_TOKEN` repository secret
 
 ## How it works (image modality)
 
-1. **Text-in-image:** Tesseract OCR (via the processor) → words + boxes →
-   token classifier → per-word BIO labels → merged spans.
+1. **Text-in-image:** Tesseract OCR (via the processor) — or your own
+   OCR's words + boxes — → token classifier → per-word BIO labels →
+   merged spans.
 2. **Visual:** a detector over the page → boxes + categories.
 3. **Redact:** fill / blur / pixelate every selected entity's box.
 

@@ -137,19 +137,48 @@ class ImagePIIRedactor:
         return self._categories  # None -> all categories
 
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def _validate_ocr_input(words, boxes) -> None:
+        if (words is None) != (boxes is None):
+            raise ValueError(
+                "Bring-your-own OCR needs BOTH words and boxes (or neither).")
+        if words is None:
+            return
+        if len(words) != len(boxes):
+            raise ValueError(
+                f"words and boxes must be the same length "
+                f"(got {len(words)} words, {len(boxes)} boxes).")
+        for i, b in enumerate(boxes):
+            if len(b) != 4:
+                raise ValueError(
+                    f"boxes[{i}] must be [x0, y0, x1, y1], got {b!r}.")
+            x0, y0, x1, y1 = b
+            if x1 < x0 or y1 < y0:
+                raise ValueError(
+                    f"boxes[{i}] is inverted ({b!r}); expected x0<=x1, y0<=y1.")
+
     def detect(
         self,
         image: ImageInput,
         *,
         categories: Optional[Iterable[str]] = None,
         ocr_lang: Optional[str] = None,
+        words: Optional[list[str]] = None,
+        boxes: Optional[list] = None,
     ) -> list[PIIEntity]:
         """Detect PII entities (text + visual). Each PIIEntity has `category`,
         `bbox` (pixels), `text`, `l1`, `score`, `kind`.
 
         `categories` selects which categories to detect (default: all);
         given per-call it overrides the constructor's selection.
+
+        Bring your own OCR by passing `words` and `boxes` together — one
+        `[x0, y0, x1, y1]` box per word, in ORIGINAL-IMAGE pixel
+        coordinates. The built-in Tesseract step is skipped (`ocr_lang` is
+        ignored) and your exact boxes come back on the emitted text
+        entities. The visual detector is unaffected.
         """
+        self._validate_ocr_input(words, boxes)
         img = _load_image(image)
         wanted = self._active_categories(categories)
         lang = ocr_lang if ocr_lang is not None else self.ocr_lang
@@ -160,11 +189,13 @@ class ImagePIIRedactor:
             # heavy compute, and the text path's Tesseract OCR is CPU-bound, so it
             # overlaps the YOLO inference instead of waiting for it.
             with ThreadPoolExecutor(max_workers=2) as ex:
-                f_text = ex.submit(self.layoutlmv3.detect, img, lang)
+                f_text = ex.submit(self.layoutlmv3.detect, img, lang,
+                                   words, boxes)
                 f_visual = ex.submit(self.yolo.detect, img)
                 results = f_text.result() + f_visual.result()
         else:
-            results = self.layoutlmv3.detect(img, ocr_lang=lang)
+            results = self.layoutlmv3.detect(img, ocr_lang=lang,
+                                             words=words, boxes=boxes)
 
         if wanted is None:
             return results
