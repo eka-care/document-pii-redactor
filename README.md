@@ -17,9 +17,7 @@ Most PII redactors stop at plain text. This one also handles **document
 images** — both the text in them (names, addresses, IDs, dates, phones, …)
 and **visual entities** (signatures, stamps, QR codes, face photos,
 fingerprints). The models are trained on **Indian names, documents, and
-contexts**, and the text model works across **Indian languages**. Image OCR
-
-defaults to lightweight **Tesseract**, and [**Bring-your-own OCR**](#quickstart)
+contexts**, and the text model works across **Indian languages**. Image OCR defaults to lightweight **Tesseract**, and [**Bring-your-own OCR**](#quickstart)
 lets any OCR (Textract, Google Vision, etc) plug straight in for even better
 accuracy.
 ## What it does
