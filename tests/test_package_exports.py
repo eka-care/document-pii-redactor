@@ -1,13 +1,13 @@
 def test_text_package_exports():
-    from eka_pii_redaction.text import (
+    from document_pii_redactor.text import (
         TextPIIRedactor, TextPIISpan, DEFAULT_HF_REPO,
     )
-    assert DEFAULT_HF_REPO == "ekacare/pii-redactors"
+    assert DEFAULT_HF_REPO == "ekacare/document-pii-redactor"
     assert TextPIIRedactor.list_entities()  # non-empty list
 
 
 def test_top_level_exports():
-    import eka_pii_redaction as pkg
+    import document_pii_redactor as pkg
     assert hasattr(pkg, "TextPIIRedactor")
     assert hasattr(pkg, "TextPIISpan")
     assert hasattr(pkg, "ImagePIIRedactor")

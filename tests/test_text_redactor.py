@@ -1,4 +1,4 @@
-from eka_pii_redaction.text.redactor import (
+from document_pii_redactor.text.redactor import (
     DEFAULT_HF_REPO, TextPIISpan, apply_mask,
 )
 
@@ -8,7 +8,7 @@ def _span(cat, start, end, l1, txt):
 
 
 def test_default_hf_repo_constant():
-    assert DEFAULT_HF_REPO == "ekacare/pii-redactors"
+    assert DEFAULT_HF_REPO == "ekacare/document-pii-redactor"
 
 
 def test_apply_mask_default_token():

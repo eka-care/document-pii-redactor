@@ -5,7 +5,7 @@ with the LayoutLMv3 token classifier, and emits one entity per labeled word
 (BIO prefix stripped to a normalised category) with a pixel bounding box.
 
 This is the *image* modality. (A future *text* modality will redact PII inside
-plain-text blobs, with no image — see `eka_pii_redaction.text`.)
+plain-text blobs, with no image — see `document_pii_redactor.text`.)
 """
 from __future__ import annotations
 
@@ -17,6 +17,23 @@ from transformers import AutoModelForTokenClassification, AutoProcessor
 
 from ..entities import PIIEntity
 from ..taxonomy import l1_group
+
+
+def normalize_boxes_to_1000(boxes, width: int, height: int) -> list[list[int]]:
+    """Convert pixel-coordinate word boxes to LayoutLMv3's 0..1000 space.
+
+    Values are rounded and clamped, so boxes that touch (or slightly
+    overshoot) the image edge stay valid.
+    """
+    out = []
+    for x0, y0, x1, y1 in boxes:
+        out.append([
+            max(0, min(1000, round(x0 / width * 1000))),
+            max(0, min(1000, round(y0 / height * 1000))),
+            max(0, min(1000, round(x1 / width * 1000))),
+            max(0, min(1000, round(y1 / height * 1000))),
+        ])
+    return out
 
 
 class LayoutLMv3Detector:
@@ -69,43 +86,59 @@ class LayoutLMv3Detector:
         return labels, word_score
 
     # ------------------------------------------------------------------ #
-    def detect(self, image: Image.Image, ocr_lang: Optional[str] = None
-               ) -> list[PIIEntity]:
-        """Return text PII entities (pixel bboxes) for one image."""
+    def detect(self, image: Image.Image, ocr_lang: Optional[str] = None,
+               words: Optional[list[str]] = None,
+               boxes: Optional[list] = None) -> list[PIIEntity]:
+        """Return text PII entities (pixel bboxes) for one image.
+
+        Pass `words` + `boxes` (word-level boxes in ORIGINAL-IMAGE pixel
+        coordinates) to bring your own OCR: Tesseract is skipped, the words
+        go straight to the classifier, and your exact pixel boxes come back
+        on the emitted entities. Without them, the built-in Tesseract path
+        runs (`ocr_lang` applies only there).
+        """
         if image.mode != "RGB":
             image = image.convert("RGB")
         W, H = image.size
 
-        # 1) Tesseract OCR via the image processor -> words + 0..1000 boxes.
-        prev_lang = self.processor.image_processor.ocr_lang
-        self.processor.image_processor.ocr_lang = ocr_lang
-        try:
-            feats = self.processor.image_processor(image, return_tensors=None)
-        finally:
-            self.processor.image_processor.ocr_lang = prev_lang
-        words = feats["words"][0]
-        boxes = feats["boxes"][0]
+        if words is not None:
+            # Bring-your-own OCR: normalize the pixel boxes to the 0..1000
+            # space LayoutLMv3 expects; keep the originals for the output.
+            pixel_boxes = [tuple(int(v) for v in b) for b in boxes]
+            norm_boxes = normalize_boxes_to_1000(boxes, W, H)
+        else:
+            # Built-in path: Tesseract via the image processor -> words +
+            # 0..1000 boxes, converted to pixels for the output.
+            prev_lang = self.processor.image_processor.ocr_lang
+            self.processor.image_processor.ocr_lang = ocr_lang
+            try:
+                feats = self.processor.image_processor(image, return_tensors=None)
+            finally:
+                self.processor.image_processor.ocr_lang = prev_lang
+            words = feats["words"][0]
+            norm_boxes = feats["boxes"][0]
+            pixel_boxes = [
+                (int(x0 / 1000 * W), int(y0 / 1000 * H),
+                 int(x1 / 1000 * W), int(y1 / 1000 * H))
+                for x0, y0, x1, y1 in norm_boxes
+            ]
         if not words:
             return []
 
-        # 2) Classify each word (toggle OCR off for the tokenization step).
+        # Classify each word (toggle OCR off for the tokenization step).
         self.processor.image_processor.apply_ocr = False
         try:
-            labels, scores = self._classify_words(image, words, boxes)
+            labels, scores = self._classify_words(image, words, norm_boxes)
         finally:
             self.processor.image_processor.apply_ocr = True
 
-        # 3) Emit one entity per labeled word (NO grouping/merging). Just strip the
-        #    BIO prefix (B-/I-) so the category is normalised (e.g. "PERSON"), and
-        #    convert each 0..1000 box to pixel coordinates of the original image.
+        # Emit one entity per labeled word (NO grouping/merging). Just strip
+        # the BIO prefix (B-/I-) so the category is normalised.
         entities: list[PIIEntity] = []
-        for w, box, lab, sc in zip(words, boxes, labels, scores):
+        for w, px, lab, sc in zip(words, pixel_boxes, labels, scores):
             if lab == "O":
                 continue
             cat = lab[2:] if lab[:2] in ("B-", "I-") else lab
-            x0, y0, x1, y1 = box
-            px = (int(x0 / 1000 * W), int(y0 / 1000 * H),
-                  int(x1 / 1000 * W), int(y1 / 1000 * H))
             entities.append(PIIEntity(
                 category=cat, kind="text", bbox=px,
                 l1=l1_group(cat), text=w,

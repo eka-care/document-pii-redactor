@@ -1,4 +1,4 @@
-from eka_pii_redaction.pseudonym import PseudonymMapping, label_for
+from document_pii_redactor.pseudonym import PseudonymMapping, label_for
 
 
 def test_label_for_friendly_and_fallback():

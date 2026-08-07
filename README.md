@@ -1,4 +1,4 @@
-# Eka-PII-redaction
+# document-pii-redactor
 
 Detect **PII in document images and plain text** — both **text** PII (names,
 addresses, IDs, dates, phone/email, …) and **visual** entities (signatures,
@@ -31,22 +31,24 @@ stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**
 From PyPI:
 
 ```bash
-pip install eka-pii-redaction          # core library
-pip install "eka-pii-redaction[server]"  # + FastAPI service
+pip install document-pii-redactor            # core: text + OCR pipelines (permissive)
+pip install "document-pii-redactor[visual]"  # + visual-entity detection (AGPL-3.0 —
+                                          #   pulls in ultralytics; see License)
+pip install "document-pii-redactor[server]"  # + FastAPI service
 ```
 
 From source:
 
 ```bash
-git clone https://github.com/eka-care/Eka-PII-redactors.git
-cd Eka-PII-redactors
+git clone https://github.com/eka-care/document-pii-redactor.git
+cd document-pii-redactor
 pip install -e .            # core library
 pip install -e ".[server]"  # + FastAPI service
 ```
 
-System dependency: **Tesseract OCR** — required for the **image** modality
-(it OCRs the document before the text-in-image classifier runs on the
-words); not needed for the text-only modality.
+System dependency: **Tesseract OCR** — used by the **image** modality's
+built-in OCR step. Not needed for the text-only modality, nor if you bring
+your own OCR (`detect(..., words=..., boxes=...)`).
 
 ```bash
 # Debian/Ubuntu
@@ -67,11 +69,11 @@ result into whichever transform you need.
 ### Detect — images
 
 ```python
-from eka_pii_redaction import ImagePIIRedactor
+from document_pii_redactor import ImagePIIRedactor
 
 # Loads the models from one HF repo; GPU if available, else CPU.
 redactor = ImagePIIRedactor(
-    "ekacare/pii-redactors",
+    "ekacare/document-pii-redactor",
     detect_visual=True,          # set False to skip visual entities (QR codes,
                                   # face photos, signatures, etc.) — text PII only
     # device="cpu",              # force CPU (default: auto)
@@ -83,12 +85,25 @@ for e in entities:
     print(e.kind, e.category, e.bbox, e.text, e.score)
 ```
 
+**Bring your own OCR.** The built-in path runs Tesseract, but you can pass
+your own OCR output instead — one `[x0, y0, x1, y1]` box per word, in
+original-image pixel coordinates. Tesseract is skipped and your exact boxes
+come back on the emitted entities:
+
+```python
+entities = redactor.detect(
+    "page.jpg",
+    words=["Patient:", "John", "Doe"],
+    boxes=[[20, 20, 90, 40], [100, 20, 140, 40], [145, 20, 180, 40]],
+)
+```
+
 ### Detect — plain text
 
 ```python
-from eka_pii_redaction import TextPIIRedactor
+from document_pii_redactor import TextPIIRedactor
 
-r = TextPIIRedactor("ekacare/pii-redactors")     # GPU if available, else CPU
+r = TextPIIRedactor("ekacare/document-pii-redactor")     # GPU if available, else CPU
 
 spans = r.detect("John Doe, DOB 1990-01-01, john@x.com")
 for s in spans:
@@ -156,8 +171,14 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 ### detect
 
 ```python
-detect(image, *, categories=None, ocr_lang=None) -> list[PIIEntity]
+detect(image, *, categories=None, ocr_lang=None,
+       words=None, boxes=None) -> list[PIIEntity]
 ```
+
+`words` + `boxes` (pixel-coordinate word boxes, passed together) bring your
+own OCR: the Tesseract step is skipped and your boxes pass through to the
+entities. Without them the built-in Tesseract path runs, honoring
+`ocr_lang`.
 
 Each `PIIEntity` has:
 
@@ -206,20 +227,20 @@ All selectable categories.
 The image bundles torch+CUDA, Tesseract, the FastAPI service, and the React
 demo UI (`web/`, built at image-build time and served by the same process at
 `/`). Same image runs on GPU or CPU. This is also what runs on the
-[`ekacare/pii-redactor-demo`](https://huggingface.co/spaces/ekacare/pii-redactor-demo)
+[`ekacare/document-pii-redactor`](https://huggingface.co/spaces/ekacare/document-pii-redactor)
 HF Space.
 
 ```bash
-docker build -t eka-pii-redaction .
+docker build -t document-pii-redactor .
 
 # GPU
 docker run --gpus all -p 7860:7860 \
-  -e EKA_PII_HF_REPO=ekacare/pii-redactors \
+  -e EKA_PII_HF_REPO=ekacare/document-pii-redactor \
   -v $HOME/.cache/huggingface:/root/.cache/huggingface \
-  eka-pii-redaction
+  document-pii-redactor
 
 # CPU
-docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 eka-pii-redaction
+docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 document-pii-redactor
 ```
 
 Open `http://localhost:7860` for the UI. API endpoints: `GET /health`,
@@ -244,7 +265,7 @@ curl -F file=@page.jpg -F mode=blur http://localhost:7860/redact -o redacted.png
 The library is organized by **modality**, so additional models slot in cleanly:
 
 ```
-eka_pii_redaction/
+document_pii_redactor/
   taxonomy.py, entities.py          # shared
   image/                            # IMAGE modality (implemented)
     redactor.py  -> ImagePIIRedactor
@@ -263,12 +284,12 @@ The single model repo mirrors this:
   text/  minilm/                    # multilingual text-PII model
 ```
 
-Both modalities share the category taxonomy (`eka_pii_redaction.taxonomy`); the
+Both modalities share the category taxonomy (`document_pii_redactor.taxonomy`); the
 text model also detects `mac_address` (device_net).
 
 ## Deploying the demo to HF Spaces
 
-The Space ([`ekacare/pii-redactor-demo`](https://huggingface.co/spaces/ekacare/pii-redactor-demo))
+The Space ([`ekacare/document-pii-redactor`](https://huggingface.co/spaces/ekacare/document-pii-redactor))
 runs this same repo's Docker image — see "Run as a container" above. To
 (re)deploy, push the repo to the Space's git remote with HF's Space front
 matter (`title` / `sdk: docker` / `app_port: 7860` / ...) prepended to
@@ -279,28 +300,40 @@ literal text. The Space reads the model via an `HF_TOKEN` repository secret
 
 ## How it works (image modality)
 
-1. **Text-in-image:** Tesseract OCR (via the processor) → words + boxes →
-   token classifier → per-word BIO labels → merged spans.
+1. **Text-in-image:** Tesseract OCR (via the processor) — or your own
+   OCR's words + boxes — → token classifier → per-word BIO labels →
+   merged spans.
 2. **Visual:** a detector over the page → boxes + categories.
 3. **Redact:** fill / blur / pixelate every selected entity's box.
 
 ## License & citation
 
 - **Code**: [Apache-2.0](LICENSE). Redistributions must carry the
-  [NOTICE](NOTICE) attribution.
-- **Model weights** ([`ekacare/pii-redactors`](https://huggingface.co/ekacare/pii-redactors)):
-  **CC-BY-4.0** — free to use, including commercially, but public use or
-  redistribution requires crediting Eka Care with a link back.
+  [NOTICE](NOTICE) attribution. The optional `[visual]` extra installs
+  [ultralytics](https://github.com/ultralytics/ultralytics) (**AGPL-3.0**) —
+  using it brings AGPL obligations; the core install stays permissive.
+- **Model weights** ([`ekacare/document-pii-redactor`](https://huggingface.co/ekacare/document-pii-redactor))
+  are licensed **per model**, following each base model's license:
+
+  | weights | fine-tuned from | license |
+  |---|---|---|
+  | `text/minilm/` (plain-text PII) | Multilingual MiniLM (MIT) | **CC-BY-4.0** — free use incl. commercial, credit Eka Care |
+  | `image/layoutlmv3/` (text-in-image PII) | `microsoft/layoutlmv3-base` | **CC-BY-NC-SA-4.0** — **non-commercial only**, ShareAlike |
+  | `image/yolo/best.pt` (visual entities) | YOLO11m (Ultralytics) | **AGPL-3.0** |
+
+  The text-only pipeline (`TextPIIRedactor`) therefore has a fully
+  permissive lineage; the image pipeline currently inherits its bases'
+  restrictions. See the model card for details.
 
 If you use this library or the models, please cite us:
 
 ```bibtex
-@software{eka_pii_redaction,
+@software{document_pii_redactor,
   author = {{Eka Care}},
-  title  = {Eka-PII-redaction: detect, redact, de-identify, or anonymize
+  title  = {document-pii-redactor: detect, redact, de-identify, or anonymize
             PII in document images and plain text},
   year   = {2026},
-  url    = {https://github.com/eka-care/Eka-PII-redactors},
-  note   = {Model weights: https://huggingface.co/ekacare/pii-redactors}
+  url    = {https://github.com/eka-care/document-pii-redactor},
+  note   = {Model weights: https://huggingface.co/ekacare/document-pii-redactor}
 }
 ```

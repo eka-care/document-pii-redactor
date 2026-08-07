@@ -1,4 +1,4 @@
-from eka_pii_redaction.text.minilm import _trim, _flatten_chunks, merge_bio_spans
+from document_pii_redactor.text.minilm import _trim, _flatten_chunks, merge_bio_spans
 
 
 def test_trim_strips_surrounding_whitespace():

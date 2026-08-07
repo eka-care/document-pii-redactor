@@ -1,4 +1,4 @@
-from eka_pii_redaction.taxonomy import (
+from document_pii_redactor.taxonomy import (
     ALL_ENTITIES, TEXT_ENTITIES, TEXT_REDACTABLE, VISUAL_ENTITIES,
     TEXT_L2_TO_L1, l1_group,
 )

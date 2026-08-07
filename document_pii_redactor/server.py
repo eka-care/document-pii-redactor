@@ -11,7 +11,7 @@ Endpoints:
     POST /detect-text | /redact-text | /deidentify-text | /anonymize-text (JSON)
 
 Config via env vars (read at startup):
-    EKA_PII_HF_REPO        Hugging Face repo id or local dir (default ekacare/pii-redactors)
+    EKA_PII_HF_REPO        Hugging Face repo id or local dir (default ekacare/document-pii-redactor)
     EKA_PII_DETECT_VISUAL  "1"/"0"  (default 1)
     EKA_PII_DEVICE         "cuda"/"cpu" (default auto)
     EKA_PII_CATEGORIES     comma-separated categories to detect (default: all)
@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from .image import DEFAULT_HF_REPO, ImagePIIRedactor
 
-app = FastAPI(title="Eka-PII-redaction", version="0.1.0")
+app = FastAPI(title="document-pii-redactor", version="0.1.0")
 _redactor: ImagePIIRedactor | None = None
 _text_redactor = None  # built lazily on first /detect-text or /redact-text call
 

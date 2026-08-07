@@ -22,8 +22,8 @@ import time
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
-from eka_pii_redaction.image import DEFAULT_HF_REPO
-from eka_pii_redaction.taxonomy import TEXT_ENTITIES, TEXT_REDACTABLE, VISUAL_ENTITIES
+from document_pii_redactor.image import DEFAULT_HF_REPO
+from document_pii_redactor.taxonomy import TEXT_ENTITIES, TEXT_REDACTABLE, VISUAL_ENTITIES
 
 st.set_page_config(page_title="Eka PII Redactor — Tester", layout="wide")
 
@@ -56,7 +56,7 @@ L1_COLORS = {
 @st.cache_resource(show_spinner=False)
 def load_image_redactor(hf_repo: str, detect_visual: bool, device: str,
                         visual_score_threshold: float):
-    from eka_pii_redaction import ImagePIIRedactor
+    from document_pii_redactor import ImagePIIRedactor
 
     return ImagePIIRedactor(
         hf_repo,
@@ -68,7 +68,7 @@ def load_image_redactor(hf_repo: str, detect_visual: bool, device: str,
 
 @st.cache_resource(show_spinner=False)
 def load_text_redactor(hf_repo: str, device: str):
-    from eka_pii_redaction import TextPIIRedactor
+    from document_pii_redactor import TextPIIRedactor
 
     return TextPIIRedactor(hf_repo, device=(None if device == "auto" else device))
 

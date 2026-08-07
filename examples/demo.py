@@ -4,13 +4,13 @@
 """
 import argparse
 
-from eka_pii_redaction import ImagePIIRedactor
+from document_pii_redactor import ImagePIIRedactor
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
-    ap.add_argument("--hf-repo", default="ekacare/pii-redactors",
+    ap.add_argument("--hf-repo", default="ekacare/document-pii-redactor",
                     help="HF repo id or a local dir with image/layoutlmv3/ + image/yolo/best.pt")
     ap.add_argument("--no-visual", action="store_true", help="text PII only")
     ap.add_argument("--device", default=None, help="cuda|cpu (default: auto)")

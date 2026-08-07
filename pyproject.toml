@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eka-pii-redaction"
-version = "0.5.0"
+name = "document-pii-redactor"
+version = "0.8.0"
 description = "Detect, redact, de-identify, or anonymize PII in document images and plain text."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,10 +28,15 @@ dependencies = [
     "pillow>=9.0",
     "numpy>=1.24",
     "pytesseract>=0.3.10",
-    "ultralytics>=8.1",
 ]
 
 [project.optional-dependencies]
+# Visual-entity detection (signatures, faces, QR codes, ...). Kept out of the
+# core dependencies on purpose: ultralytics is AGPL-3.0, and so are the
+# visual detector weights derived from YOLO11 — installing this extra brings
+# AGPL obligations with it. The core package and the text/OCR pipeline stay
+# permissively licensed.
+visual = ["ultralytics>=8.1"]
 server = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
@@ -40,7 +45,7 @@ server = [
 dev = ["pytest>=7.4"]
 
 [project.urls]
-Homepage = "https://github.com/eka-care/Eka-PII-redactors"
+Homepage = "https://github.com/eka-care/document-pii-redactor"
 
 [tool.setuptools.packages.find]
-include = ["eka_pii_redaction*"]
+include = ["document_pii_redactor*"]

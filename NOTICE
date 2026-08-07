@@ -1,8 +1,12 @@
-Eka-PII-redaction
+document-pii-redactor
 Copyright 2026 Eka Care (https://www.eka.care)
 
 This product includes software developed by Eka Care:
-https://github.com/eka-care/Eka-PII-redactors
+https://github.com/eka-care/document-pii-redactor
 
-Model weights are distributed separately under CC-BY-4.0:
-https://huggingface.co/ekacare/pii-redactors
+Model weights are distributed separately, licensed per model (see
+https://huggingface.co/ekacare/document-pii-redactor):
+  - text/minilm/        CC-BY-4.0  (fine-tuned from Multilingual MiniLM, MIT)
+  - image/layoutlmv3/   CC-BY-NC-SA-4.0, non-commercial
+                        (fine-tuned from microsoft/layoutlmv3-base)
+  - image/yolo/best.pt  AGPL-3.0  (fine-tuned from Ultralytics YOLO11m)
