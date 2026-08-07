@@ -55,25 +55,25 @@ Load once, detect once — every transform consumes the `detect()` result:
 ```python
 from document_pii_redactor import ImagePIIRedactor, TextPIIRedactor
 
-redactor = ImagePIIRedactor("ekacare/document-pii-redactor")
-entities = redactor.detect("report.png")              # built-in Tesseract OCR
+image_redactor = ImagePIIRedactor("ekacare/document-pii-redactor")
+entities = image_redactor.detect("report.png")              # built-in Tesseract OCR
 
 # …or bring your own OCR — pass words + pixel boxes, Tesseract is skipped
 # and your exact boxes come back on the detected entities:
-entities = redactor.detect("report.png", words=["John", "Doe"],
-                           boxes=[[100, 20, 140, 40], [145, 20, 180, 40]])
+entities = image_redactor.detect("report.png", words=["John", "Doe"],
+                                 boxes=[[100, 20, 140, 40], [145, 20, 180, 40]])
 
-r = TextPIIRedactor("ekacare/document-pii-redactor")
+text_redactor = TextPIIRedactor("ekacare/document-pii-redactor")
 text  = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Bangalore. Contact: +91 98765 43210."
-spans = r.detect(text)
+spans = text_redactor.detect(text)
 ```
 
 **Redact** — destroy:
 
 ```python
-redactor.redact("report.png", entities, mode="blur").save("redacted.png")  # or "solid" / "pixelate"
+image_redactor.redact("report.png", entities, mode="blur").save("redacted.png")  # or "solid" / "pixelate"
 
-r.redact(text, spans)
+text_redactor.redact(text, spans)
 # '[REDACTED], [REDACTED] yrs, DOB [REDACTED], [REDACTED], [REDACTED]. Contact: [REDACTED].'
 ```
 
@@ -82,9 +82,9 @@ buckets, dates keep only the year, fine geography collapses to `[LOCATION]`
 (state and country survive), everything else becomes an unnumbered token:
 
 ```python
-redactor.anonymize("report.png", entities).save("anonymized.png")
+image_redactor.anonymize("report.png", entities).save("anonymized.png")
 
-r.anonymize(text, spans)
+text_redactor.anonymize(text, spans)
 # '[PERSON], 40–49 yrs, DOB 1979, [LOCATION], [LOCATION]. Contact: [PHONE].'
 ```
 
@@ -94,13 +94,13 @@ re-linking. `strategy="hash"` gives tokens that stay stable across documents
 with no mapping to thread (`secret=` salts the hash):
 
 ```python
-deid = redactor.deidentify("report.png", entities)    # .image + .mapping
+deid = image_redactor.deidentify("report.png", entities)    # .image + .mapping
 deid.image.save("deidentified.png")
 
-r.deidentify(text, spans).text
+text_redactor.deidentify(text, spans).text
 # 'Person_1, Age_1 yrs, DOB Date_1, City_1, City_2. Contact: Phone_1.'
 
-r.deidentify(text, spans, strategy="hash").text
+text_redactor.deidentify(text, spans, strategy="hash").text
 # 'Person_539681, Age_6c8349 yrs, DOB Date_7f19c4, City_d12704, City_60c7d5. Contact: Phone_d57003.'
 ```
 
