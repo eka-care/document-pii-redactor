@@ -155,9 +155,13 @@ class TextPIIRedactor:
 
         `spans` is a `detect()` result — detection is always the explicit
         first step; every transform consumes its output. `mask` may contain
-        `{category}` / `{l1}` placeholders (see `apply_mask`).
+        `{category}` / `{l1}` placeholders (see `apply_mask`). Adjacent
+        same-category spans collapse into one mask (matching deidentify/
+        anonymize), so "Mr. John Doe" yields a single token.
         """
-        return apply_mask(text, spans, mask=mask)
+        from .transforms import merge_adjacent_spans
+
+        return apply_mask(text, merge_adjacent_spans(text, spans), mask=mask)
 
     def deidentify(
         self,

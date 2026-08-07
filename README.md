@@ -1,173 +1,124 @@
+<div align="center">
+
 # document-pii-redactor
 
-Most PII redactors stop at plain text. This one also redacts **document
-images**, and it is light enough to deploy on **CPU**. The models are
-trained to understand **Indian names, documents, and contexts**, and the
-text model works across **Indian languages**. The image pipeline defaults
-to **Tesseract OCR** to keep the memory footprint small — and any OCR
-(Textract, Google Vision, …) plugs straight in for even better redaction
-accuracy.
+**Detect PII in document images and plain text — then redact, anonymize, or de-identify it.**
+Built for Indian documents, light enough to run on CPU.
 
-Detect **PII in document images and plain text** — both **text** PII (names,
-addresses, IDs, dates, phone/email, …) and **visual** entities (signatures,
-stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**,
-**de-identify**, or **anonymize** it, behind a single class per modality.
+[![PyPI](https://img.shields.io/pypi/v/document-pii-redactor?color=2f6feb)](https://pypi.org/project/document-pii-redactor/)
+[![Python](https://img.shields.io/pypi/pyversions/document-pii-redactor?color=2f6feb)](https://pypi.org/project/document-pii-redactor/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-2f6feb)](#license--citation)
+[![Demo](https://img.shields.io/badge/%F0%9F%A4%97-live_demo-ffd21e)](https://huggingface.co/spaces/ekacare/document-pii-redactor)
+[![Models](https://img.shields.io/badge/%F0%9F%A4%97-model_weights-ffd21e)](https://huggingface.co/ekacare/document-pii-redactor)
 
-- **Three modes, one detector.**
-  **Redact** destroys the value (mask/black-out — nothing kept).
-  **De-identify** replaces each entity with a consistent pseudonym and
-  returns the entity→pseudonym mapping so an authorized key-holder can
-  re-link later — either sequential (`Person_1`, scoped to the mapping) or
-  hash tokens (`Person_a3f9c1`, a.k.a. PII tokenization: md5 of the value,
-  globally deterministic across documents with no mapping to thread).
-  **Anonymize** is one-way: ages become 10-year buckets, dates keep only the
-  year, fine geography collapses, and names/IDs become unnumbered tokens —
-  no mapping exists anywhere.
-- **One install, one Hugging Face repo.** The package internally pulls the
-  model weights it needs from one HF repo; you only ever reference one
-  repo id.
-- **Text + visual** in one call, or text-only if you don't need the detector.
-- **CPU or GPU** — auto-selects CUDA if available, else CPU.
-- **Choose what to process** — select the categories to detect; all of them by default.
-- Returns a structured **entity list** (`text`, `bbox`, `category`, …) and/or a
-  transformed image/string.
+</div>
 
-> Note: anonymization here is best-effort removal/generalization of
-> *detected* identifiers. It is not a k-anonymity guarantee and not, by
-> itself, a compliance determination.
+Most PII redactors stop at plain text. This one also handles **document
+images** — both the text in them (names, addresses, IDs, dates, phones, …)
+and **visual entities** (signatures, stamps, QR codes, face photos,
+fingerprints). The models are trained on **Indian names, documents, and
+contexts**, and the text model works across **Indian languages**. Image OCR
+defaults to lightweight **Tesseract**; any OCR (Textract, Google Vision, …)
+[plugs straight in](#quickstart) for even better accuracy.
+
+## What it does
+
+`detect()` is the core primitive — it finds every PII entity with its
+location, category, and confidence. The three transforms consume its output:
+
+| action | result | reversible? |
+|---|---|---|
+| `detect()` | structured entity list (category, location, text, confidence) | — |
+| `redact()` | destroy — mask text, or black-out / blur / pixelate image regions | no |
+| `anonymize()` | generalize — age → 10-year bucket, dates → year, fine geography → `[LOCATION]`, everything else → unnumbered tokens | no |
+| `deidentify()` | consistent pseudonyms — sequential `Person_1`, or globally deterministic hash tokens `Person_a3f9c1` (a.k.a. PII tokenization) — plus the entity→pseudonym mapping | via the returned mapping |
+
+> Anonymization is best-effort removal/generalization of *detected*
+> identifiers — not a k-anonymity guarantee or a compliance determination.
 
 ## Install
 
-From PyPI:
-
 ```bash
-pip install document-pii-redactor            # core: text + OCR pipelines (permissive)
-pip install "document-pii-redactor[visual]"  # + visual-entity detection (AGPL-3.0 —
-                                          #   pulls in ultralytics; see License)
+pip install document-pii-redactor            # core: text + OCR pipelines (permissive licenses)
+pip install "document-pii-redactor[visual]"  # + visual-entity detection (AGPL-3.0 — see License)
 pip install "document-pii-redactor[server]"  # + FastAPI service
 ```
 
-From source:
-
-```bash
-git clone https://github.com/eka-care/document-pii-redactor.git
-cd document-pii-redactor
-pip install -e .            # core library
-pip install -e ".[server]"  # + FastAPI service
-```
-
-System dependency: **Tesseract OCR** — used by the **image** modality's
-built-in OCR step. Not needed for the text-only modality, nor if you bring
-your own OCR (`detect(..., words=..., boxes=...)`).
-
-```bash
-# Debian/Ubuntu
-sudo apt-get install -y tesseract-ocr
-# macOS
-brew install tesseract
-```
-
-(The provided Docker image installs everything for you — see below.)
+Tesseract (`apt-get install tesseract-ocr` / `brew install tesseract`) is
+needed only for the built-in image OCR — not for text-only use or
+bring-your-own-OCR.
 
 ## Quickstart
 
-**`detect()` is the core primitive** — it finds every PII entity with its
-location, category, and confidence. The transforms (redact / anonymize /
-de-identify) are consumers of its output: run detection once, feed the same
-result into whichever transform you need.
-
-### Detect — images
+Load once, detect once — every transform consumes the `detect()` result:
 
 ```python
-from document_pii_redactor import ImagePIIRedactor
+from document_pii_redactor import ImagePIIRedactor, TextPIIRedactor
 
-# Loads the models from one HF repo; GPU if available, else CPU.
-redactor = ImagePIIRedactor(
-    "ekacare/document-pii-redactor",
-    detect_visual=True,          # set False to skip visual entities (QR codes,
-                                  # face photos, signatures, etc.) — text PII only
-    # device="cpu",              # force CPU (default: auto)
-    # categories=["primary_subject_name", "phone_mobile"],  # detect only these (default: all)
-)
+image_redactor = ImagePIIRedactor("ekacare/document-pii-redactor")
+entities = image_redactor.detect("report.png")              # built-in Tesseract OCR
 
-entities = redactor.detect("page.jpg")
-for e in entities:
-    print(e.kind, e.category, e.bbox, e.text, e.score)
+# …or bring your own OCR — pass words + pixel boxes, Tesseract is skipped
+# and your exact boxes come back on the detected entities:
+entities = image_redactor.detect("report.png", words=["John", "Doe"],
+                                 boxes=[[100, 20, 140, 40], [145, 20, 180, 40]])
+
+text_redactor = TextPIIRedactor("ekacare/document-pii-redactor")
+text  = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Bangalore. Contact: +91 98765 43210."
+spans = text_redactor.detect(text)
 ```
 
-**Bring your own OCR.** The built-in path runs Tesseract, but you can pass
-your own OCR output instead — one `[x0, y0, x1, y1]` box per word, in
-original-image pixel coordinates. Tesseract is skipped and your exact boxes
-come back on the emitted entities:
+**Redact** — destroy:
 
 ```python
-entities = redactor.detect(
-    "page.jpg",
-    words=["Patient:", "John", "Doe"],
-    boxes=[[20, 20, 90, 40], [100, 20, 140, 40], [145, 20, 180, 40]],
-)
+image_redactor.redact("report.png", entities, mode="blur").save("redacted.png")  # or "solid" / "pixelate"
+
+text_redactor.redact(text, spans)
+# '[REDACTED], [REDACTED] yrs, DOB [REDACTED], [REDACTED], [REDACTED]. Contact: [REDACTED].'
 ```
 
-### Detect — plain text
+**Anonymize** — generalize, one-way, no mapping kept. Ages become 10-year
+buckets, dates keep only the year, fine geography collapses to `[LOCATION]`
+(state and country survive), everything else becomes an unnumbered token:
 
 ```python
-from document_pii_redactor import TextPIIRedactor
+image_redactor.anonymize("report.png", entities).save("anonymized.png")
 
-r = TextPIIRedactor("ekacare/document-pii-redactor")     # GPU if available, else CPU
-
-spans = r.detect("John Doe, DOB 1990-01-01, john@x.com")
-for s in spans:
-    print(s.category, s.l1, s.start, s.end, s.text, s.score)
+text_redactor.anonymize(text, spans)
+# '[PERSON], 40–49 yrs, DOB 1979, [LOCATION], [LOCATION]. Contact: [PHONE].'
 ```
 
-`TextPIIRedactor` runs a lightweight multilingual token classifier on raw text —
-no OCR, no image — and returns `TextPIISpan(category, start, end, l1, text, score)`
-with **character** offsets. `detect()` (image) accepts a file path, raw
-`bytes`, or a `PIL.Image`.
-
-### Feed detections into transforms
-
-Every transform takes a `detect()` result as its second argument (`entities`
-for images, `spans` for text). Detection is always the explicit first step —
-it runs once, and every transform consumes its output.
+**De-identify** — pseudonymize. Same value → same pseudonym throughout the
+document, and the entity→pseudonym mapping comes back for authorized
+re-linking. `strategy="hash"` gives tokens that stay stable across documents
+with no mapping to thread (`secret=` salts the hash):
 
 ```python
-# --- Image: one detection, three outputs ---
-entities = redactor.detect("page.jpg")
+deid = image_redactor.deidentify("report.png", entities)    # .image + .mapping
+deid.image.save("deidentified.png")
 
-redactor.redact("page.jpg", entities, mode="blur").save("redacted.png")
-redactor.anonymize("page.jpg", entities).save("anonymized.png")
-deid = redactor.deidentify("page.jpg", entities)   # ImageDeidResult
-deid.image.save("deidentified.png")      # pseudonyms rendered in place;
-                                          # faces/signatures become placeholders
-deid.mapping.to_dict()                   # store securely to re-link later
+text_redactor.deidentify(text, spans).text
+# 'Person_1, Age_1 yrs, DOB Date_1, City_1, City_2. Contact: Phone_1.'
 
-# --- Text: same pattern ---
-text = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka."
-spans = r.detect(text)
-
-r.redact(text, spans, mask="[{category}]")
-r.anonymize(text, spans)
-# -> "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."  (no mapping exists)
-result = r.deidentify(text, spans)
-result.text      # -> "Person_1, Age_1 yrs, DOB Date_1, City_1, State_1."
-result.mapping   # entity -> pseudonym map; pass mapping=result.mapping on the
-                 # next page of the same record to keep numbering consistent
-
-# Hash strategy (a.k.a. PII tokenization): globally deterministic tokens —
-# the same value gets the same token in every document, on every machine,
-# with no mapping to thread. Salt with secret= to resist dictionary
-# reversal of guessable values (phones, dates); the mapping still captures
-# token -> original for authorized re-linking.
-r.deidentify(text, spans, strategy="hash")               # Person_a3f9c1 ...
-r.deidentify(text, spans, strategy="hash", secret="s3cr3t")
+text_redactor.deidentify(text, spans, strategy="hash").text
+# 'Person_539681, Age_6c8349 yrs, DOB Date_7f19c4, City_d12704, City_60c7d5. Contact: Phone_d57003.'
 ```
 
-(Example outputs are illustrative — exact spans depend on the model's tagging
-of the input.) De-identification consistency is per exact surface form
-(`"John Doe"` and a later bare `"John"` get different pseudonyms).
+Good to know:
 
-## API
+- Transforms **require** the `detect()` result as their second argument —
+  detection is always the explicit first step, and runs the models exactly once.
+- `categories=[...]` on `detect()` limits which of the 53 PII categories are
+  found (default: all).
+- Sequential pseudonyms are scoped to the returned `mapping` — pass
+  `mapping=result.mapping` on the next page of the same record to keep
+  numbering consistent. Hash tokens need no threading.
+
+For a runnable end-to-end walkthrough, see
+[`examples/quickstart.ipynb`](examples/quickstart.ipynb).
+
+<details>
+<summary><b>API reference</b></summary>
 
 ### ImagePIIRedactor
 
@@ -179,7 +130,7 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 
 | arg | meaning |
 |---|---|
-| `hf_repo` | HF repo id **or** a local dir with `text_model/` + `visual_model/best.pt`. |
+| `hf_repo` | HF repo id **or** a local dir with the model layout below. |
 | `detect_visual` | If `False`, visual entities (QR codes, face photos, signatures, etc.) are **not** downloaded or loaded — text PII only. |
 | `device` | `"cuda"` / `"cpu"`. `None` → auto (CUDA if available). |
 | `categories` | The categories to detect. Default `None` = all of them. |
@@ -195,8 +146,7 @@ detect(image, *, categories=None, ocr_lang=None,
 
 `words` + `boxes` (pixel-coordinate word boxes, passed together) bring your
 own OCR: the Tesseract step is skipped and your boxes pass through to the
-entities. Without them the built-in Tesseract path runs, honoring
-`ocr_lang`.
+entities. Without them the built-in Tesseract path runs, honoring `ocr_lang`.
 
 Each `PIIEntity` has:
 
@@ -215,38 +165,52 @@ Each `PIIEntity` has:
 redact(image, entities, *, mode="solid", color=(0,0,0), pad=2) -> PIL.Image
 ```
 
-Returns a redacted copy. `mode` ∈ `solid` | `blur` | `pixelate`. All
-transforms (`redact` / `anonymize` / `deidentify`, both modalities) take a
-`detect()` result as their second argument — `entities` for images, `spans`
-for text. Detection is the only step that runs the models; per-call
-`categories` / `ocr_lang` therefore live on `detect()`.
+`mode` ∈ `solid` | `blur` | `pixelate`. All transforms (both modalities)
+take a `detect()` result as their second argument — `entities` for images,
+`spans` for text.
+
+### deidentify
+
+```python
+deidentify(image_or_text, entities_or_spans, *,
+           mapping=None, strategy="counter", secret=None)
+```
+
+`strategy="counter"` (default) mints sequential `Person_1` pseudonyms scoped
+to `mapping`; `strategy="hash"` mints globally deterministic `Person_a3f9c1`
+tokens (md5 of the normalized value, salted with `secret`). Returns a result
+with `.mapping` either way. Text also has `redact(text, spans, mask=...)`
+with `{category}` / `{l1}` placeholders, and `anonymize(text, spans)`.
 
 ### list_entities
 
 ```python
 ImagePIIRedactor.list_entities() -> {"text": [...], "visual": [...]}
+TextPIIRedactor.list_entities()  -> [...]
 ```
 
-All selectable categories.
+</details>
 
-## Categories
+<details>
+<summary><b>PII categories (47 text + 6 visual)</b></summary>
 
-- **Text (47):** person (name, age, gender, occupation, …), location (address,
-  city, state, postcode, …), date_time, contact (phone, email, web_url, fax),
-  uid (aadhaar, pan, passport, mrn/uhid, abha, insurance policy, bank/iban/upi, …),
-  device_net, credential, and `brandname`.
-- **Visual (6):** `signature`, `seal_stamp`, `qr_barcode`, `face_photo`,
-  `fingerprint_thumb_impression`, `logo`.
+- **Text (47):** person (name, age, gender, occupation, …), location
+  (address, city, state, postcode, …), date_time, contact (phone, email,
+  web_url, fax), uid (aadhaar, pan, passport, mrn/uhid, abha, insurance
+  policy, bank/iban/upi, …), brandname, device_net, and credential
+- **Visual (6):** `signature` · `seal_stamp` · `qr_barcode` · `face_photo` ·
+  `fingerprint_thumb_impression` · `logo`
 
-`ImagePIIRedactor.list_entities()` returns the exact set.
+`list_entities()` returns the exact set.
 
-## Run as a container
+</details>
 
-The image bundles torch+CUDA, Tesseract, the FastAPI service, and the React
-demo UI (`web/`, built at image-build time and served by the same process at
-`/`). Same image runs on GPU or CPU. This is also what runs on the
-[`ekacare/document-pii-redactor`](https://huggingface.co/spaces/ekacare/document-pii-redactor)
-HF Space.
+<details>
+<summary><b>Self-hosting — Docker container & HF Space</b></summary>
+
+The Docker image bundles torch, Tesseract, the FastAPI service, and the
+React demo UI (served at `/`). Same image runs on GPU or CPU; it is also
+what runs on the [demo Space](https://huggingface.co/spaces/ekacare/document-pii-redactor).
 
 ```bash
 docker build -t document-pii-redactor .
@@ -261,87 +225,80 @@ docker run --gpus all -p 7860:7860 \
 docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 document-pii-redactor
 ```
 
-Open `http://localhost:7860` for the UI. API endpoints: `GET /health`,
-`GET /entities`, `GET /entities-text`,
-`POST /detect` / `POST /redact` / `POST /anonymize` (multipart `file`,
-optional `categories` query param (comma-separated; absent = all),
-`mode`/`color` form fields for `/redact`),
-`POST /deidentify` (multipart `file` → JSON `{"image": <base64 png>,
-"mapping": ...}`), and `POST /detect-text` / `POST /redact-text` /
-`POST /deidentify-text` / `POST /anonymize-text`
-(JSON `{"text": ..., "categories": [...]}`; `/deidentify-text` also accepts
-`"mapping"` from a prior call and returns the updated one).
-Env: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`, `EKA_PII_EXCLUDE`.
+Open `http://localhost:7860` for the UI.
+
+**Endpoints** — image (multipart `file`, optional `categories` query param,
+comma-separated, absent = all): `POST /detect`, `POST /redact`
+(`mode`/`color` form fields), `POST /anonymize`, `POST /deidentify`
+(also `strategy`/`secret` query params; returns JSON
+`{"image": <base64 png>, "mapping": ...}`). Text (JSON
+`{"text": ..., "categories": [...]}`): `POST /detect-text`,
+`POST /redact-text`, `POST /anonymize-text`, `POST /deidentify-text`
+(also accepts `"mapping"`, `"strategy"`, `"secret"`). Plus `GET /health`,
+`GET /entities`, `GET /entities-text`.
+
+**Env**: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`,
+`EKA_PII_CATEGORIES`.
 
 ```bash
 curl -F file=@page.jpg http://localhost:7860/detect
 curl -F file=@page.jpg -F mode=blur http://localhost:7860/redact -o redacted.png
 ```
 
-## Structure (by modality)
+**Deploying the demo Space**: push the repo to the Space's git remote with
+HF's Space front matter (`title` / `sdk: docker` / `app_port: 7860` / …)
+prepended to `README.md` for that push — the Space needs it to render its
+card, but GitHub and PyPI would show it as literal text. The Space reads the
+model via an `HF_TOKEN` repository secret.
 
-The library is organized by **modality**, so additional models slot in cleanly:
+</details>
+
+<details>
+<summary><b>How it works & repo structure</b></summary>
+
+Image modality:
+
+1. **Text-in-image:** Tesseract OCR — or your own OCR's words + boxes — →
+   token classifier → per-word BIO labels → merged spans.
+2. **Visual:** a detector over the page → boxes + categories.
+3. **Transforms:** fill / blur / pixelate boxes (redact), or erase-and-render
+   replacement values in place (de-identify / anonymize).
+
+The library is organized by **modality**, so additional models slot in
+cleanly:
 
 ```
 document_pii_redactor/
   taxonomy.py, entities.py          # shared
-  image/                            # IMAGE modality (implemented)
+  image/                            # IMAGE modality
     redactor.py  -> ImagePIIRedactor
     layoutlmv3.py -> text-PII-in-image detector
     yolo11m.py    -> visual-entity detector
-  text/                             # TEXT modality (implemented)
+  text/                             # TEXT modality
     redactor.py  -> TextPIIRedactor  (PII inside plain-text strings, no image)
     minilm.py    -> text-PII token classifier (char-span detector)
 ```
 
-The single model repo mirrors this:
+The model repo mirrors this: `image/layoutlmv3/`, `image/yolo/best.pt`,
+`text/minilm/`. Both modalities share the category taxonomy
+(`document_pii_redactor.taxonomy`).
 
-```
-<hf_repo>/
-  image/ layoutlmv3/   yolo/best.pt
-  text/  minilm/                    # multilingual text-PII model
-```
-
-Both modalities share the category taxonomy (`document_pii_redactor.taxonomy`); the
-text model also detects `mac_address` (device_net).
-
-## Deploying the demo to HF Spaces
-
-The Space ([`ekacare/document-pii-redactor`](https://huggingface.co/spaces/ekacare/document-pii-redactor))
-runs this same repo's Docker image — see "Run as a container" above. To
-(re)deploy, push the repo to the Space's git remote with HF's Space front
-matter (`title` / `sdk: docker` / `app_port: 7860` / ...) prepended to
-`README.md` for that push — the Space needs it to render its card, but it is
-kept out of this tracked README because GitHub and PyPI would render it as
-literal text. The Space reads the model via an `HF_TOKEN` repository secret
-(Space → Settings → Repository secrets).
-
-## How it works (image modality)
-
-1. **Text-in-image:** Tesseract OCR (via the processor) — or your own
-   OCR's words + boxes — → token classifier → per-word BIO labels →
-   merged spans.
-2. **Visual:** a detector over the page → boxes + categories.
-3. **Redact:** fill / blur / pixelate every selected entity's box.
+</details>
 
 ## License & citation
 
-- **Code**: [Apache-2.0](LICENSE). Redistributions must carry the
-  [NOTICE](NOTICE) attribution. The optional `[visual]` extra installs
-  [ultralytics](https://github.com/ultralytics/ultralytics) (**AGPL-3.0**) —
-  using it brings AGPL obligations; the core install stays permissive.
-- **Model weights** ([`ekacare/document-pii-redactor`](https://huggingface.co/ekacare/document-pii-redactor))
-  are licensed **per model**, following each base model's license:
+**Code**: [Apache-2.0](LICENSE) (keep the [NOTICE](NOTICE) attribution when
+redistributing). The optional `[visual]` extra installs
+[ultralytics](https://github.com/ultralytics/ultralytics) (**AGPL-3.0**).
+**Model weights** are licensed per model, following each base's license —
+the text pipeline is fully permissive; the image models inherit
+restrictions:
 
-  | weights | fine-tuned from | license |
-  |---|---|---|
-  | `text/minilm/` (plain-text PII) | Multilingual MiniLM (MIT) | **CC-BY-4.0** — free use incl. commercial, credit Eka Care |
-  | `image/layoutlmv3/` (text-in-image PII) | `microsoft/layoutlmv3-base` | **CC-BY-NC-SA-4.0** — **non-commercial only**, ShareAlike |
-  | `image/yolo/best.pt` (visual entities) | YOLO11m (Ultralytics) | **AGPL-3.0** |
-
-  The text-only pipeline (`TextPIIRedactor`) therefore has a fully
-  permissive lineage; the image pipeline currently inherits its bases'
-  restrictions. See the model card for details.
+| weights | fine-tuned from | license |
+|---|---|---|
+| `text/minilm/` (plain-text PII) | Multilingual MiniLM (MIT) | **CC-BY-4.0** — free use incl. commercial, credit Eka Care |
+| `image/layoutlmv3/` (text-in-image PII) | `microsoft/layoutlmv3-base` | **CC-BY-NC-SA-4.0** — **non-commercial only**, ShareAlike |
+| `image/yolo/best.pt` (visual entities) | YOLO11m (Ultralytics) | **AGPL-3.0** |
 
 If you use this library or the models, please cite us:
 
