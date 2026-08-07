@@ -48,3 +48,38 @@ def test_round_trip_serialization_continues_numbering():
 def test_from_dict_none_gives_empty_mapping():
     m = PseudonymMapping.from_dict(None)
     assert m.pseudonym_for("email", "a@b.com") == "Email_1"
+
+
+# ------------------------------------------------------------ hash tokens --- #
+def test_token_for_is_deterministic_and_normalized():
+    import re
+    from document_pii_redactor.pseudonym import token_for
+
+    t = token_for("primary_subject_name", "John Doe")
+    assert re.fullmatch(r"Person_[0-9a-f]{6}", t)
+    # Global determinism: same value -> same token, no shared state needed.
+    assert token_for("primary_subject_name", "John Doe") == t
+    # Normalization: whitespace/case variants agree.
+    assert token_for("primary_subject_name", "  JOHN   doe ") == t
+    # Different values -> different tokens.
+    assert token_for("primary_subject_name", "Asha Menon") != t
+
+
+def test_token_for_secret_salts_the_hash():
+    from document_pii_redactor.pseudonym import token_for
+
+    plain = token_for("phone_mobile", "+91 98765 43210")
+    salted = token_for("phone_mobile", "+91 98765 43210", secret="s3cr3t")
+    assert plain != salted
+    # Same secret reproduces the same token — cross-system consistency.
+    assert token_for("phone_mobile", "+91 98765 43210", secret="s3cr3t") == salted
+
+
+def test_record_token_captures_reverse_mapping_once():
+    m = PseudonymMapping()
+    from document_pii_redactor.pseudonym import token_for
+
+    tok = token_for("primary_subject_name", "John Doe")
+    assert m.record_token("primary_subject_name", "John Doe", tok) == tok
+    m.record_token("primary_subject_name", "JOHN DOE", tok)  # normalized dup
+    assert m.entries["Person"] == {tok: "John Doe"}

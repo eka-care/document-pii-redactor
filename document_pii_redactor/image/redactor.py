@@ -250,16 +250,23 @@ class ImagePIIRedactor:
         entities: list[PIIEntity],
         *,
         mapping=None,
+        strategy: str = "counter",
+        secret: Optional[str] = None,
     ):
         """De-identify: consistent pseudonyms rendered in place of text PII.
 
         `entities` is a `detect()` result. OCR'd words are merged into
-        logical entities ("John Doe" -> one "Person_1"), erased to the
+        logical entities ("John Doe" -> one pseudonym), erased to the
         surrounding background color, and the pseudonym is drawn into the
         box. Visual-only entities (faces, signatures, ...) become neutral
-        labeled placeholders. Returns `ImageDeidResult(image, mapping)`;
-        pass a prior `mapping` to keep numbering stable across pages of one
-        record.
+        labeled placeholders.
+
+        strategy "counter" (default) mints sequential `Person_1` pseudonyms
+        scoped to `mapping` (pass a prior mapping to keep numbering stable
+        across pages); strategy "hash" mints globally deterministic
+        `Person_a3f9c1` tokens (md5 of the normalized value, optionally
+        salted with `secret`) — same value, same token, across all
+        documents. Returns `ImageDeidResult(image, mapping)`.
         """
         from ..pseudonym import PseudonymMapping
         from .transforms import ImageDeidResult, apply_deidentify
@@ -267,8 +274,10 @@ class ImagePIIRedactor:
         if mapping is None:
             mapping = PseudonymMapping()
         img = _load_image(image)
-        return ImageDeidResult(image=apply_deidentify(img, entities, mapping),
-                               mapping=mapping)
+        return ImageDeidResult(
+            image=apply_deidentify(img, entities, mapping,
+                                   strategy=strategy, secret=secret),
+            mapping=mapping)
 
     def anonymize(self, image: ImageInput,
                   entities: list[PIIEntity]) -> Image.Image:

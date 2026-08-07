@@ -15,9 +15,11 @@ stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**
 
 - **Three modes, one detector.**
   **Redact** destroys the value (mask/black-out — nothing kept).
-  **De-identify** replaces each entity with a consistent pseudonym
-  (`Person_1`) and returns the entity→pseudonym mapping so an authorized
-  key-holder can re-link later.
+  **De-identify** replaces each entity with a consistent pseudonym and
+  returns the entity→pseudonym mapping so an authorized key-holder can
+  re-link later — either sequential (`Person_1`, scoped to the mapping) or
+  hash tokens (`Person_a3f9c1`, a.k.a. PII tokenization: md5 of the value,
+  globally deterministic across documents with no mapping to thread).
   **Anonymize** is one-way: ages become 10-year buckets, dates keep only the
   year, fine geography collapses, and names/IDs become unnumbered tokens —
   no mapping exists anywhere.
@@ -151,6 +153,14 @@ result = r.deidentify(text, spans)
 result.text      # -> "Person_1, Age_1 yrs, DOB Date_1, City_1, State_1."
 result.mapping   # entity -> pseudonym map; pass mapping=result.mapping on the
                  # next page of the same record to keep numbering consistent
+
+# Hash strategy (a.k.a. PII tokenization): globally deterministic tokens —
+# the same value gets the same token in every document, on every machine,
+# with no mapping to thread. Salt with secret= to resist dictionary
+# reversal of guessable values (phones, dates); the mapping still captures
+# token -> original for authorized re-linking.
+r.deidentify(text, spans, strategy="hash")               # Person_a3f9c1 ...
+r.deidentify(text, spans, strategy="hash", secret="s3cr3t")
 ```
 
 (Example outputs are illustrative — exact spans depend on the model's tagging

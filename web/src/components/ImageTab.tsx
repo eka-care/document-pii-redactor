@@ -4,6 +4,7 @@ import {
   deidentifyImage,
   detect,
   redact,
+  type DeidStrategy,
   type EntityTaxonomy,
   type PIIEntity,
   type PseudonymMapping,
@@ -49,6 +50,7 @@ export default function ImageTab({
   const [action, setAction] = useState<Action>('redact')
   const [mode, setMode] = useState<RedactMode>('blur')
   const [color, setColor] = useState('#000000')
+  const [strategy, setStrategy] = useState<DeidStrategy>('counter')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   // All categories selected by default, once the taxonomy arrives.
@@ -149,7 +151,7 @@ export default function ImageTab({
         setRedactedUrl(URL.createObjectURL(blob))
         setResultTitle(`Redacted · ${mode}`)
       } else if (action === 'deidentify') {
-        const [ents, result] = await Promise.all([detecting, deidentifyImage(file, categories)])
+        const [ents, result] = await Promise.all([detecting, deidentifyImage(file, categories, strategy)])
         setDetectedEntities(ents)
         setRedactedUrl(result.imageUrl)
         setMapping(result.mapping)
@@ -211,6 +213,18 @@ export default function ImageTab({
                 <option value="deidentify">De-identify</option>
               </select>
             </label>
+            {action === 'deidentify' && (
+              <label className="field">
+                <span className="field-label">Token style</span>
+                <select
+                  value={strategy}
+                  onChange={(e) => setStrategy(e.target.value as DeidStrategy)}
+                >
+                  <option value="counter">Sequential (Person_1)</option>
+                  <option value="hash">Hash — global (Person_a3f9c1)</option>
+                </select>
+              </label>
+            )}
             {action === 'redact' && (
               <>
                 <label className="field">

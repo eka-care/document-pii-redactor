@@ -10,6 +10,7 @@ Anonymization deliberately does NOT use this module — no mapping may exist.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 
 # L2 category -> human-friendly pseudonym label. Categories that share a label
@@ -55,6 +56,22 @@ def _normalize(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def token_for(category: str, text: str, secret: str | None = None) -> str:
+    """Globally deterministic hash pseudonym: {Label}_{md5[:6]}.
+
+    Same value -> same token across documents, machines, and time — no
+    mapping needed for consistency (the de-identify "hash" strategy).
+    Hashed on the normalized form, so "John Doe" and "john  doe" agree.
+
+    An optional `secret` salts the hash: without it, tokens for guessable
+    values (phone numbers, dates) can be reversed by dictionary attack;
+    with it, only holders of the same secret can reproduce the mapping.
+    """
+    payload = (secret or "") + _normalize(text)
+    digest = hashlib.md5(payload.encode("utf-8")).hexdigest()
+    return f"{label_for(category)}_{digest[:6]}"
+
+
 @dataclass
 class PseudonymMapping:
     """Entity -> pseudonym assignments for one record (possibly many pages).
@@ -85,6 +102,17 @@ class PseudonymMapping:
         self.entries.setdefault(label, {})[pseudonym] = original
         self._index[key] = pseudonym
         return pseudonym
+
+    def record_token(self, category: str, original: str, token: str) -> str:
+        """Record an externally minted pseudonym (the hash strategy's tokens)
+        so the mapping still captures token -> original for re-linking —
+        hash tokens are one-way, so an uncaptured mapping is unrecoverable."""
+        label = label_for(category)
+        key = (label, _normalize(original))
+        if key not in self._index:
+            self.entries.setdefault(label, {})[token] = original
+            self._index[key] = token
+        return token
 
     def to_dict(self) -> dict:
         return {"entries": self.entries, "counters": self.counters}
