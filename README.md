@@ -1,11 +1,17 @@
+<div align="center">
+
 # document-pii-redactor
 
-**Detect PII in document images and plain text — then redact, anonymize, or
-de-identify it.** Built for Indian documents, light enough to run on CPU.
+**Detect PII in document images and plain text — then redact, anonymize, or de-identify it.**
+Built for Indian documents, light enough to run on CPU.
 
-[**Try the live demo**](https://huggingface.co/spaces/ekacare/document-pii-redactor) ·
-[Model weights](https://huggingface.co/ekacare/document-pii-redactor) ·
-[PyPI](https://pypi.org/project/document-pii-redactor/)
+[![PyPI](https://img.shields.io/pypi/v/document-pii-redactor?color=2f6feb)](https://pypi.org/project/document-pii-redactor/)
+[![Python](https://img.shields.io/pypi/pyversions/document-pii-redactor?color=2f6feb)](https://pypi.org/project/document-pii-redactor/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-2f6feb)](#license--citation)
+[![Demo](https://img.shields.io/badge/%F0%9F%A4%97-live_demo-ffd21e)](https://huggingface.co/spaces/ekacare/document-pii-redactor)
+[![Models](https://img.shields.io/badge/%F0%9F%A4%97-model_weights-ffd21e)](https://huggingface.co/ekacare/document-pii-redactor)
+
+</div>
 
 Most PII redactors stop at plain text. This one also handles **document
 images** — both the text in them (names, addresses, IDs, dates, phones, …)
@@ -44,59 +50,82 @@ bring-your-own-OCR.
 
 ## Quickstart
 
+Load once, detect once — every transform consumes the `detect()` result:
+
 ```python
-from document_pii_redactor import ImagePIIRedactor
+from document_pii_redactor import ImagePIIRedactor, TextPIIRedactor
 
 redactor = ImagePIIRedactor("ekacare/document-pii-redactor")
+entities = redactor.detect("report.png")              # built-in Tesseract OCR
 
-entities = redactor.detect("page.jpg")
-redactor.redact("page.jpg", entities, mode="blur").save("redacted.png")
-```
-
-```python
-from document_pii_redactor import TextPIIRedactor
+# …or bring your own OCR — pass words + pixel boxes, Tesseract is skipped
+# and your exact boxes come back on the detected entities:
+entities = redactor.detect("report.png", words=["John", "Doe"],
+                           boxes=[[100, 20, 140, 40], [145, 20, 180, 40]])
 
 r = TextPIIRedactor("ekacare/document-pii-redactor")
-
-spans = r.detect("Mr. John Doe, 45 yrs, DOB 12-03-1979, Bangalore.")
-r.redact("Mr. John Doe, 45 yrs, DOB 12-03-1979, Bangalore.", spans)
-```
-
-That's the whole pattern: **detect once, feed the result to any transform** —
-swap `redact(...)` for `anonymize(...)` or `deidentify(...)`.
-
-<details>
-<summary><b>More examples — all transforms, hash tokens, bring-your-own-OCR</b></summary>
-
-```python
-# ---------- document images ----------
-entities = redactor.detect("page.jpg")
-
-redactor.redact("page.jpg", entities, mode="blur").save("redacted.png")
-redactor.anonymize("page.jpg", entities).save("anonymized.png")
-deid = redactor.deidentify("page.jpg", entities)          # .image + .mapping
-deid.image.save("deidentified.png")
-
-# ---------- plain text ----------
-text = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka."
-
+text  = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Bangalore. Contact: +91 98765 43210."
 spans = r.detect(text)
-r.redact(text, spans, mask="[{category}]")
-r.anonymize(text, spans)       # "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."
-r.deidentify(text, spans).text # "Person_1, Age_1 yrs, DOB Date_1, City_1, State_1."
-
-# Hash tokens: same value → same token in EVERY document, no mapping to thread.
-# secret= salts the hash so guessable values can't be dictionary-reversed.
-r.deidentify(text, spans, strategy="hash", secret="s3cr3t")   # Person_a3f9c1 …
 ```
 
-**Bring your own OCR** — pass word boxes (original-image pixel coordinates)
-and Tesseract is skipped; your exact boxes come back on the entities:
+Every image below is the library's **real, unretouched output** on page 1 of a
+genuine Indian lab report (a CBC panel). Name, DOB, IDs, dates, doctor,
+signature, QR codes, barcodes — all caught. Notice what *doesn't* change:
+every medical value survives untouched. Only identity is removed. (The
+unprocessed original is withheld — it is a real person's medical record.)
+
+### Redact — destroy
 
 ```python
-entities = redactor.detect("page.jpg", words=["John", "Doe"],
-                           boxes=[[100, 20, 140, 40], [145, 20, 180, 40]])
+redactor.redact("report.png", entities, mode="blur").save("redacted.png")  # or "solid" / "pixelate"
+
+r.redact(text, spans)
+# '[REDACTED], [REDACTED] yrs, DOB [REDACTED], [REDACTED], [REDACTED]. Contact: [REDACTED].'
 ```
+
+<img src="assets/showcase/redacted.png" width="100%" alt="Lab report with every PII region blurred; all medical values intact">
+
+### Anonymize — generalize
+
+One-way, no mapping kept. Ages become 10-year buckets, dates keep only the
+year, fine geography collapses to `[LOCATION]` (state and country survive),
+everything else becomes an unnumbered token:
+
+```python
+redactor.anonymize("report.png", entities).save("anonymized.png")
+
+r.anonymize(text, spans)
+# '[PERSON], 40–49 yrs, DOB 1979, [LOCATION], [LOCATION]. Contact: [PHONE].'
+```
+
+<img src="assets/showcase/anonymized.png" width="100%" alt="Lab report with PII generalized: black boxes, [PERSON]/[MRN]/[LOCATION] tokens, dates reduced to years, state kept">
+
+### De-identify — pseudonymize
+
+Every entity becomes a consistent pseudonym — the same value gets the same
+pseudonym everywhere in the document — and you get the entity→pseudonym
+mapping back, so an authorized caller can re-link later:
+
+```python
+deid = redactor.deidentify("report.png", entities)
+deid.image.save("deidentified.png")
+deid.mapping.entries["Person"]                # {'Person_1': 'Mrs …', 'Person_2': 'Dr …'}
+
+result = r.deidentify(text, spans)
+result.text
+# 'Person_1, Age_1 yrs, DOB Date_1, City_1, City_2. Contact: Phone_1.'
+```
+
+Need tokens that stay stable across *documents*, with no mapping to thread?
+Use hash tokens — globally deterministic, and `secret=` salts the hash so
+guessable values can't be dictionary-reversed:
+
+```python
+r.deidentify(text, spans, strategy="hash").text
+# 'Person_539681, Age_6c8349 yrs, DOB Date_7f19c4, City_d12704, City_60c7d5. Contact: Phone_d57003.'
+```
+
+<img src="assets/showcase/deidentified.png" width="100%" alt="Lab report with PII replaced by typed pseudonyms: Person_1, MRN_1, Date_1, gray [QR]/[SIGNATURE] placeholders">
 
 Good to know:
 
@@ -104,12 +133,9 @@ Good to know:
   detection is always the explicit first step, and runs the models exactly once.
 - `categories=[...]` on `detect()` limits which of the 53 PII categories are
   found (default: all).
-- Sequential de-identify pseudonyms are scoped to the returned `mapping` —
-  pass `mapping=result.mapping` on the next page of the same record to keep
+- Sequential pseudonyms are scoped to the returned `mapping` — pass
+  `mapping=result.mapping` on the next page of the same record to keep
   numbering consistent. Hash tokens need no threading.
-- Example outputs are illustrative; exact spans depend on the model's tagging.
-
-</details>
 
 <details>
 <summary><b>API reference</b></summary>
