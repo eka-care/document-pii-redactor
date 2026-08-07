@@ -1,5 +1,13 @@
 # document-pii-redactor
 
+Most PII redactors stop at plain text. This one also redacts **document
+images**, and it is light enough to deploy on **CPU**. The models are
+trained to understand **Indian names, documents, and contexts**, and the
+text model works across **Indian languages**. The image pipeline defaults
+to **Tesseract OCR** to keep the memory footprint small — and any OCR
+(Textract, Google Vision, …) plugs straight in for even better redaction
+accuracy.
+
 Detect **PII in document images and plain text** — both **text** PII (names,
 addresses, IDs, dates, phone/email, …) and **visual** entities (signatures,
 stamps/seals, QR/barcodes, face photos, fingerprints, logos) — then **redact**,
