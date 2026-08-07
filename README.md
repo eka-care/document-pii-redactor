@@ -169,9 +169,9 @@ TextPIIRedactor.list_entities()  -> [...]
 - **Text (47):** person (name, age, gender, occupation, …), location
   (address, city, state, postcode, …), date_time, contact (phone, email,
   web_url, fax), uid (aadhaar, pan, passport, mrn/uhid, abha, insurance
-  policy, bank/iban/upi, …), device_net, credential, and `brandname`.
-- **Visual (6):** `signature`, `seal_stamp`, `qr_barcode`, `face_photo`,
-  `fingerprint_thumb_impression`, `logo`.
+  policy, bank/iban/upi, …), brandname, device_net, and credential
+- **Visual (6):** `signature` · `seal_stamp` · `qr_barcode` · `face_photo` ·
+  `fingerprint_thumb_impression` · `logo`
 
 `list_entities()` returns the exact set.
 
