@@ -1,10 +1,10 @@
 from PIL import Image
 
-from eka_pii_redaction.entities import PIIEntity
-from eka_pii_redaction.image.transforms import (
+from document_pii_redactor.entities import PIIEntity
+from document_pii_redactor.image.transforms import (
     apply_anonymize, apply_deidentify, group_text_entities,
 )
-from eka_pii_redaction.pseudonym import PseudonymMapping
+from document_pii_redactor.pseudonym import PseudonymMapping
 
 
 def _word(cat, bbox, txt, kind="text"):

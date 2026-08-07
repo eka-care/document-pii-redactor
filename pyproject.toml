@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eka-pii-redaction"
-version = "0.7.0"
+name = "document-pii-redactor"
+version = "0.8.0"
 description = "Detect, redact, de-identify, or anonymize PII in document images and plain text."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -45,7 +45,7 @@ server = [
 dev = ["pytest>=7.4"]
 
 [project.urls]
-Homepage = "https://github.com/eka-care/Eka-PII-redactors"
+Homepage = "https://github.com/eka-care/document-pii-redactor"
 
 [tool.setuptools.packages.find]
-include = ["eka_pii_redaction*"]
+include = ["document_pii_redactor*"]

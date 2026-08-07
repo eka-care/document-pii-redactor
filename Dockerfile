@@ -1,13 +1,13 @@
-# Eka-PII-redaction — single container running text + visual PII redaction,
+# document-pii-redactor — single container running text + visual PII redaction,
 # plus the React demo UI (web/), served by the same FastAPI process.
 #
 # Base image ships torch + CUDA so the same image runs on GPU (if --gpus is
 # passed) or CPU. Tesseract (text OCR) and libGL/glib (opencv used by ultralytics)
 # are installed as system deps.
 #
-# Build:  docker build -t eka-pii-redaction .
-# Run (GPU):  docker run --gpus all -p 7860:7860 eka-pii-redaction
-# Run (CPU):  docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 eka-pii-redaction
+# Build:  docker build -t document-pii-redactor .
+# Run (GPU):  docker run --gpus all -p 7860:7860 document-pii-redactor
+# Run (CPU):  docker run -e EKA_PII_DEVICE=cpu -p 7860:7860 document-pii-redactor
 #
 # The API + UI listen on :7860 (HF Spaces' conventional Docker port). Models
 # are pulled from the Hugging Face repo on first start (set EKA_PII_HF_REPO;
@@ -46,4 +46,4 @@ COPY --from=web-builder /web/dist /app/web/dist
 RUN pip install --no-cache-dir --break-system-packages ".[server,visual]"
 
 EXPOSE 7860
-CMD ["uvicorn", "eka_pii_redaction.server:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "document_pii_redactor.server:app", "--host", "0.0.0.0", "--port", "7860"]

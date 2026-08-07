@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from eka_pii_redaction.image.layoutlmv3 import normalize_boxes_to_1000
-from eka_pii_redaction.image.redactor import ImagePIIRedactor
+from document_pii_redactor.image.layoutlmv3 import normalize_boxes_to_1000
+from document_pii_redactor.image.redactor import ImagePIIRedactor
 
 
 # ---------------------------------------------------- pure logic (no model) --- #
@@ -45,7 +45,7 @@ pytestmark_integration = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def redactor():
-    return ImagePIIRedactor("ekacare/pii-redactors", detect_visual=False,
+    return ImagePIIRedactor("ekacare/document-pii-redactor", detect_visual=False,
                             device="cpu")
 
 

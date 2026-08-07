@@ -1,4 +1,4 @@
-"""PII entity taxonomy for Eka-PII-redaction.
+"""PII entity taxonomy for document-pii-redactor.
 
 Two kinds of entities:
   - TEXT entities: 47 fine-grained L2 PII classes (grouped under 8 L1 groups),

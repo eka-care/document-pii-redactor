@@ -5,7 +5,7 @@ with the LayoutLMv3 token classifier, and emits one entity per labeled word
 (BIO prefix stripped to a normalised category) with a pixel bounding box.
 
 This is the *image* modality. (A future *text* modality will redact PII inside
-plain-text blobs, with no image — see `eka_pii_redaction.text`.)
+plain-text blobs, with no image — see `document_pii_redactor.text`.)
 """
 from __future__ import annotations
 

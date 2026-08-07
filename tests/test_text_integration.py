@@ -10,7 +10,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def redactor():
-    from eka_pii_redaction import TextPIIRedactor
+    from document_pii_redactor import TextPIIRedactor
     return TextPIIRedactor(device="cpu")
 
 

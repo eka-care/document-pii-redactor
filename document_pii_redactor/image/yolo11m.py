@@ -22,7 +22,7 @@ class YOLODetector:
         except ImportError as exc:
             raise ImportError(
                 "Visual-entity detection needs the 'visual' extra: "
-                "pip install 'eka-pii-redaction[visual]'. Note that the "
+                "pip install 'document-pii-redactor[visual]'. Note that the "
                 "ultralytics dependency and the visual detector weights are "
                 "AGPL-3.0 licensed (see the README's license section); use "
                 "detect_visual=False for the permissively-licensed text-only "

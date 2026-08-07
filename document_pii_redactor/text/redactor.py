@@ -1,6 +1,6 @@
 """TextPIIRedactor — detect & redact PII inside plain-text strings (TEXT modality).
 
-The text counterpart to `eka_pii_redaction.image.ImagePIIRedactor`. Operates on
+The text counterpart to `document_pii_redactor.image.ImagePIIRedactor`. Operates on
 raw strings (no image, no OCR) via a multilingual MiniLM token classifier and
 returns character-span annotations and/or a redacted string. The weights live
 under `text/minilm/` in the same single HF repo as the image models:
@@ -9,15 +9,15 @@ under `text/minilm/` in the same single HF repo as the image models:
         image/   layoutlmv3/, yolo/best.pt     # image modality
         text/    minilm/                        # text modality (this)
 
-    from eka_pii_redaction.text import TextPIIRedactor
+    from document_pii_redactor.text import TextPIIRedactor
 
-    r = TextPIIRedactor("ekacare/pii-redactors")
+    r = TextPIIRedactor("ekacare/document-pii-redactor")
     spans = r.detect("John Doe, DOB 1990-01-01, lives at ...")
     #   -> list[TextPIISpan]: {category, start, end, l1, text, score}
     clean = r.redact("...", mask="[REDACTED]")   # -> str with PII replaced
 
 The category taxonomy is shared with the image modality (see
-`eka_pii_redaction.taxonomy`), minus the visual-only categories.
+`document_pii_redactor.taxonomy`), minus the visual-only categories.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from typing import Iterable, Optional
 
 from ..taxonomy import TEXT_REDACTABLE, validate_entities
 
-DEFAULT_HF_REPO = "ekacare/pii-redactors"
+DEFAULT_HF_REPO = "ekacare/document-pii-redactor"
 # Text model location within the (single) model repo, organized by modality.
 MINILM_SUBDIR = "text/minilm"
 

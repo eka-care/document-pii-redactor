@@ -1,6 +1,6 @@
 """ImagePIIRedactor — detect & redact PII in document IMAGES (the image modality).
 
-    from eka_pii_redaction import ImagePIIRedactor   # or: from eka_pii_redaction.image import ...
+    from document_pii_redactor import ImagePIIRedactor   # or: from document_pii_redactor.image import ...
 
     redactor = ImagePIIRedactor(detect_visual=True)          # GPU if available
     entities = redactor.detect("page.jpg")                   # list[PIIEntity]
@@ -31,7 +31,7 @@ from ..entities import PIIEntity
 from ..taxonomy import ALL_ENTITIES, TEXT_ENTITIES, VISUAL_ENTITIES, validate_entities
 from .layoutlmv3 import LayoutLMv3Detector
 
-DEFAULT_HF_REPO = "ekacare/pii-redactors"
+DEFAULT_HF_REPO = "ekacare/document-pii-redactor"
 # Weight locations within the (single) model repo, organized by modality.
 LAYOUTLMV3_SUBDIR = "image/layoutlmv3"
 YOLO_WEIGHTS = "image/yolo/best.pt"

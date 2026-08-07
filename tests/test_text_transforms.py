@@ -1,6 +1,6 @@
-from eka_pii_redaction.pseudonym import PseudonymMapping
-from eka_pii_redaction.text.redactor import TextPIISpan
-from eka_pii_redaction.text.transforms import (
+from document_pii_redactor.pseudonym import PseudonymMapping
+from document_pii_redactor.text.redactor import TextPIISpan
+from document_pii_redactor.text.transforms import (
     anonymize_value, apply_anonymization, apply_pseudonyms, merge_adjacent_spans,
 )
 
