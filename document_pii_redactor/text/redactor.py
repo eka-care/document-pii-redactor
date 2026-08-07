@@ -165,13 +165,22 @@ class TextPIIRedactor:
         spans: Iterable[TextPIISpan],
         *,
         mapping=None,
+        strategy: str = "counter",
+        secret: Optional[str] = None,
     ):
-        """De-identify: replace each entity with a consistent numbered pseudonym.
+        """De-identify: replace each entity with a consistent pseudonym.
 
-        `spans` is a `detect()` result. Same entity -> same pseudonym; the
-        entity->pseudonym mapping is returned (never persisted here) so an
-        authorized caller can re-link later. Pass a prior result's `mapping`
-        to keep numbering stable across pages/documents of the same record.
+        `spans` is a `detect()` result. Two pseudonym strategies:
+        - "counter" (default): sequential `Person_1` pseudonyms, scoped to
+          the mapping — pass a prior result's `mapping` to keep numbering
+          stable across pages/documents of one record.
+        - "hash": globally deterministic `Person_a3f9c1` tokens (md5 of the
+          normalized value; salt with `secret` to resist dictionary
+          reversal of guessable values) — same value, same token, across
+          all documents, no mapping threading needed.
+
+        Either way the entity->pseudonym mapping is returned (never
+        persisted here) so an authorized caller can re-link later.
         Returns `TextDeidResult(text, mapping)`.
         """
         from ..pseudonym import PseudonymMapping
@@ -179,8 +188,10 @@ class TextPIIRedactor:
 
         if mapping is None:
             mapping = PseudonymMapping()
-        return TextDeidResult(text=apply_pseudonyms(text, spans, mapping),
-                              mapping=mapping)
+        return TextDeidResult(
+            text=apply_pseudonyms(text, spans, mapping,
+                                  strategy=strategy, secret=secret),
+            mapping=mapping)
 
     def anonymize(self, text: str, spans: Iterable[TextPIISpan]) -> str:
         """Anonymize: one-way replacement with quasi-identifier generalization.

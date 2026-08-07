@@ -4,6 +4,7 @@ import {
   deidentifyText,
   detectText,
   redactText,
+  type DeidStrategy,
   type PseudonymMapping,
   type TextPIISpan,
 } from '../lib/api'
@@ -67,6 +68,7 @@ function renderHighlighted(text: string, spans: TextPIISpan[]) {
 export default function TextTab({ entities, ready }: { entities: string[] | null; ready: boolean }) {
   const [text, setText] = useState(EXAMPLE_TEXT)
   const [action, setAction] = useState<Action>('detect')
+  const [strategy, setStrategy] = useState<DeidStrategy>('counter')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [spans, setSpans] = useState<TextPIISpan[]>([])
   const [outputText, setOutputText] = useState<string | null>(null)
@@ -107,7 +109,7 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
           setOutputText(await redactText(text, categories))
           setOutputTitle('Redacted')
         } else if (action === 'deidentify') {
-          const result = await deidentifyText(text, categories)
+          const result = await deidentifyText(text, categories, strategy)
           setOutputText(result.text)
           setMapping(result.mapping)
           setOutputTitle('De-identified')
@@ -184,6 +186,18 @@ export default function TextTab({ entities, ready }: { entities: string[] | null
               <option value="deidentify">De-identify</option>
             </select>
           </label>
+          {action === 'deidentify' && (
+            <label className="field">
+              <span className="field-label">Token style</span>
+              <select
+                value={strategy}
+                onChange={(e) => setStrategy(e.target.value as DeidStrategy)}
+              >
+                <option value="counter">Sequential (Person_1)</option>
+                <option value="hash">Hash — global (Person_a3f9c1)</option>
+              </select>
+            </label>
+          )}
           <button
             type="button"
             className="primary-btn"

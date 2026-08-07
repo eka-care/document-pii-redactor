@@ -59,6 +59,8 @@ class _DeidTextIn(BaseModel):
     text: str
     categories: list[str] | None = None
     mapping: dict | None = None  # a prior call's mapping, to continue numbering
+    strategy: str = "counter"    # "counter" (Person_1) | "hash" (Person_a3f9c1)
+    secret: str | None = None    # optional salt for the hash strategy
 
 
 def _env_categories(only_text: bool = False) -> list[str] | None:
@@ -160,7 +162,8 @@ def deidentify_text(body: _DeidTextIn):
 
     spans = _get_text().detect(body.text, categories=body.categories)
     result = _get_text().deidentify(
-        body.text, spans, mapping=PseudonymMapping.from_dict(body.mapping))
+        body.text, spans, mapping=PseudonymMapping.from_dict(body.mapping),
+        strategy=body.strategy, secret=body.secret)
     return {"text": result.text, "mapping": result.mapping.to_dict()}
 
 
@@ -171,14 +174,17 @@ def anonymize_text(body: _TextIn):
 
 
 @app.post("/deidentify")
-async def deidentify(file: UploadFile = File(...), categories: str | None = Query(None)):
+async def deidentify(file: UploadFile = File(...),
+                     categories: str | None = Query(None),
+                     strategy: str = Query("counter"),
+                     secret: str | None = Query(None)):
     # JSON (base64 PNG + mapping) rather than an image response — the mapping
     # has to ride along with the image it de-identifies.
     import base64
 
     data = await file.read()
     ents = _get().detect(data, categories=_parse_categories(categories))
-    result = _get().deidentify(data, ents)
+    result = _get().deidentify(data, ents, strategy=strategy, secret=secret)
     buf = io.BytesIO()
     result.image.save(buf, format="PNG")
     return JSONResponse({

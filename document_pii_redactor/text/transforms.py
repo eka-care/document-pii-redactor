@@ -95,11 +95,30 @@ def _replace_spans(text: str, spans: Iterable[TextPIISpan], substitute) -> str:
 
 
 def apply_pseudonyms(text: str, spans: Iterable[TextPIISpan],
-                     mapping: PseudonymMapping) -> str:
-    """De-identify: consistent numbered pseudonyms, recorded in `mapping`."""
-    return _replace_spans(
-        text, spans,
-        lambda sp: mapping.pseudonym_for(sp.category, text[sp.start:sp.end]))
+                     mapping: PseudonymMapping, *, strategy: str = "counter",
+                     secret: str | None = None) -> str:
+    """De-identify: consistent pseudonyms, recorded in `mapping`.
+
+    strategy "counter": sequential per-label pseudonyms (Person_1) — scoped
+    to the mapping, which threads numbering across pages.
+    strategy "hash": globally deterministic tokens (Person_a3f9c1, md5 of
+    the normalized value, optionally salted with `secret`) — same value
+    gets the same token across documents with no mapping to thread.
+    """
+    if strategy == "counter":
+        substitute = (lambda sp:
+                      mapping.pseudonym_for(sp.category, text[sp.start:sp.end]))
+    elif strategy == "hash":
+        from ..pseudonym import token_for
+
+        def substitute(sp):
+            value = text[sp.start:sp.end]
+            return mapping.record_token(
+                sp.category, value, token_for(sp.category, value, secret))
+    else:
+        raise ValueError(
+            f"strategy must be 'counter' or 'hash', got {strategy!r}")
+    return _replace_spans(text, spans, substitute)
 
 
 def apply_anonymization(text: str, spans: Iterable[TextPIISpan]) -> str:

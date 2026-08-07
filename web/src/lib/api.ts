@@ -109,11 +109,14 @@ export async function redactText(text: string, categories?: string[]): Promise<s
   return data.text
 }
 
+export type DeidStrategy = 'counter' | 'hash'
+
 export async function deidentifyText(
   text: string,
   categories?: string[],
+  strategy: DeidStrategy = 'counter',
 ): Promise<{ text: string; mapping: PseudonymMapping }> {
-  return postJson('/deidentify-text', { text, categories })
+  return postJson('/deidentify-text', { text, categories, strategy })
 }
 
 export async function anonymizeText(text: string, categories?: string[]): Promise<string> {
@@ -124,11 +127,15 @@ export async function anonymizeText(text: string, categories?: string[]): Promis
 export async function deidentifyImage(
   file: File,
   categories?: string[],
+  strategy: DeidStrategy = 'counter',
 ): Promise<{ imageUrl: string; mapping: PseudonymMapping }> {
   const form = new FormData()
   form.append('file', file)
-  const qs = categories?.length ? `?categories=${encodeURIComponent(categories.join(','))}` : ''
-  const res = await assertOk(await fetch(`/deidentify${qs}`, { method: 'POST', body: form }))
+  const params = new URLSearchParams({ strategy })
+  if (categories?.length) params.set('categories', categories.join(','))
+  const res = await assertOk(
+    await fetch(`/deidentify?${params}`, { method: 'POST', body: form }),
+  )
   const data = await res.json()
   return { imageUrl: `data:image/png;base64,${data.image}`, mapping: data.mapping }
 }

@@ -126,3 +126,38 @@ def test_apply_anonymization_end_to_end():
     ]
     assert apply_anonymization(text, spans) == \
         "[PERSON], 40–49, DOB 1979, [LOCATION], Karnataka"
+
+
+# ---------------------------------------------------------- hash strategy --- #
+def test_hash_strategy_is_consistent_across_documents():
+    from document_pii_redactor.pseudonym import token_for
+
+    span = [_span("primary_subject_name", 0, 8, "person", "John Doe")]
+    # Two separate calls with FRESH mappings — counters would restart at
+    # Person_1 both times; hash tokens must agree because they derive from
+    # the value itself.
+    out1 = apply_pseudonyms("John Doe", span, PseudonymMapping(), strategy="hash")
+    out2 = apply_pseudonyms("John Doe", span, PseudonymMapping(), strategy="hash")
+    assert out1 == out2 == token_for("primary_subject_name", "John Doe")
+
+
+def test_hash_strategy_records_mapping_and_merges_spans():
+    text = "Patient: Mr. John Doe here"
+    spans = [
+        _span("primary_subject_name", 9, 17, "person", "Mr. John"),
+        _span("primary_subject_name", 18, 21, "person", "Doe"),
+    ]
+    m = PseudonymMapping()
+    out = apply_pseudonyms(text, spans, m, strategy="hash")
+    from document_pii_redactor.pseudonym import token_for
+
+    tok = token_for("primary_subject_name", "Mr. John Doe")
+    assert out == f"Patient: {tok} here"          # merged -> ONE token
+    assert m.entries["Person"] == {tok: "Mr. John Doe"}
+
+
+def test_unknown_strategy_raises():
+    import pytest
+
+    with pytest.raises(ValueError, match="strategy"):
+        apply_pseudonyms("x", [], PseudonymMapping(), strategy="vault")

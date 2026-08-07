@@ -438,10 +438,21 @@ def _draw_labels(out: Image.Image, groups: list[EntityGroup],
 
 # -------------------------------------------------------------- appliers --- #
 def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
-                     mapping: PseudonymMapping) -> Image.Image:
+                     mapping: PseudonymMapping, *, strategy: str = "counter",
+                     secret: str | None = None) -> Image.Image:
     # Strict fill-then-label ordering across BOTH kinds: any fill drawn after
     # a label can wipe it (a large [LOGO] placeholder once erased half of the
     # brand pseudonyms drawn next to it).
+    if strategy == "counter":
+        substitute = lambda g: mapping.pseudonym_for(g.category, g.text)  # noqa: E731
+    elif strategy == "hash":
+        from ..pseudonym import token_for
+        substitute = (lambda g: mapping.record_token(  # noqa: E731
+            g.category, g.text, token_for(g.category, g.text, secret)))
+    else:
+        raise ValueError(
+            f"strategy must be 'counter' or 'hash', got {strategy!r}")
+
     out = img.convert("RGB").copy()
     groups = group_text_entities(entities)
     visuals = [e for e in entities if e.kind == "visual"]
@@ -451,8 +462,7 @@ def apply_deidentify(img: Image.Image, entities: list[PIIEntity],
     for v in visuals:
         fill_visual_placeholder(out, v.bbox)
 
-    _draw_labels(out, groups, backgrounds, sizes,
-                 lambda g: mapping.pseudonym_for(g.category, g.text))
+    _draw_labels(out, groups, backgrounds, sizes, substitute)
     for v in visuals:
         label_visual_placeholder(out, v.bbox, v.category)
     return out

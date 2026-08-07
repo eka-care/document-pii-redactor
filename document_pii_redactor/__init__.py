@@ -11,7 +11,7 @@ from .pseudonym import PseudonymMapping
 from .taxonomy import ALL_ENTITIES, TEXT_ENTITIES, TEXT_REDACTABLE, VISUAL_ENTITIES
 from .text import TextPIIRedactor, TextPIISpan
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 __all__ = [
     "ImagePIIRedactor",
     "TextPIIRedactor",
