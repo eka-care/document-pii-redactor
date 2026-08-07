@@ -45,22 +45,42 @@ bring-your-own-OCR.
 ## Quickstart
 
 ```python
-from document_pii_redactor import ImagePIIRedactor, TextPIIRedactor
+from document_pii_redactor import ImagePIIRedactor
 
-# ---------- document images ----------
 redactor = ImagePIIRedactor("ekacare/document-pii-redactor")
 
-entities = redactor.detect("page.jpg")                    # 1) detect once
+entities = redactor.detect("page.jpg")
+redactor.redact("page.jpg", entities, mode="blur").save("redacted.png")
+```
+
+```python
+from document_pii_redactor import TextPIIRedactor
+
+r = TextPIIRedactor("ekacare/document-pii-redactor")
+
+spans = r.detect("Mr. John Doe, 45 yrs, DOB 12-03-1979, Bangalore.")
+r.redact("Mr. John Doe, 45 yrs, DOB 12-03-1979, Bangalore.", spans)
+```
+
+That's the whole pattern: **detect once, feed the result to any transform** —
+swap `redact(...)` for `anonymize(...)` or `deidentify(...)`.
+
+<details>
+<summary><b>More examples — all transforms, hash tokens, bring-your-own-OCR</b></summary>
+
+```python
+# ---------- document images ----------
+entities = redactor.detect("page.jpg")
+
 redactor.redact("page.jpg", entities, mode="blur").save("redacted.png")
 redactor.anonymize("page.jpg", entities).save("anonymized.png")
 deid = redactor.deidentify("page.jpg", entities)          # .image + .mapping
 deid.image.save("deidentified.png")
 
 # ---------- plain text ----------
-r = TextPIIRedactor("ekacare/document-pii-redactor")
 text = "Mr. John Doe, 45 yrs, DOB 12-03-1979, Indiranagar, Karnataka."
 
-spans = r.detect(text)                                    # 1) detect once
+spans = r.detect(text)
 r.redact(text, spans, mask="[{category}]")
 r.anonymize(text, spans)       # "[PERSON], 40–49 yrs, DOB 1979, [LOCATION], Karnataka."
 r.deidentify(text, spans).text # "Person_1, Age_1 yrs, DOB Date_1, City_1, State_1."
@@ -88,6 +108,8 @@ Good to know:
   pass `mapping=result.mapping` on the next page of the same record to keep
   numbering consistent. Hash tokens need no threading.
 - Example outputs are illustrative; exact spans depend on the model's tagging.
+
+</details>
 
 <details>
 <summary><b>API reference</b></summary>
