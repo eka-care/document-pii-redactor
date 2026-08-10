@@ -54,13 +54,15 @@ def apply_mask(text: str, spans: "Iterable[TextPIISpan]", mask: str = "[REDACTED
     """Replace each span's characters in `text` with `mask`.
 
     `mask` may contain `{category}` and/or `{l1}` placeholders, filled per span;
-    a literal mask (no `{`) is inserted verbatim. Spans are applied left-to-right
-    on character offsets; any span overlapping an already-consumed region is
-    skipped so offsets stay valid.
+    a literal mask (no `{`) is inserted verbatim. Overlapping spans are first
+    collapsed to a single span over their union (widest member's category
+    wins) — every covered character must end up masked.
     """
+    from .transforms import union_overlapping_spans
+
     out: list[str] = []
     prev = 0
-    for sp in sorted(spans, key=lambda s: s.start):
+    for sp in union_overlapping_spans(text, spans):
         if sp.start < prev:
             continue
         out.append(text[prev:sp.start])
