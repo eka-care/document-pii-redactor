@@ -18,9 +18,10 @@ images** — both the text in them (names, addresses, IDs, dates, phones, …)
 and **visual entities** (signatures, stamps, QR codes, face photos,
 fingerprints). The models are trained on **Indian names, documents, and
 contexts**, and the text model works across **Indian languages**. Image OCR
-defaults to lightweight **Tesseract**, and [**Bring-your-own OCR**](#quickstart)
-lets any OCR (Textract, Google Vision, etc) plug straight in for even better
-accuracy.
+defaults to lightweight **Tesseract**, which works well for PDFs and
+good-quality images; for more difficult or blurred images,
+[**Bring-your-own OCR**](#quickstart) lets a model like **Nemotron OCR**
+(or Textract, Google Vision, etc) plug straight in for better results.
 ## What it does
 
 `detect()` is the core primitive — it finds every PII entity with its
