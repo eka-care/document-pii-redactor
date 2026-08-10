@@ -21,7 +21,8 @@ contexts**, and the text model works across **Indian languages**. Image OCR
 defaults to lightweight **Tesseract**, which works well for PDFs and
 good-quality images; for more difficult or blurred images,
 [**Bring-your-own OCR**](#quickstart) lets a model like [**Nemotron OCR**](https://huggingface.co/nvidia/nemotron-ocr-v2)
-(or Textract, Google Vision, etc) plug straight in for better results.
+(or Textract, Google Vision, etc) plug straight in for better results
+([example notebook](examples/byo_ocr_nemotron.ipynb)).
 ## What it does
 
 `detect()` is the core primitive — it finds every PII entity with its
