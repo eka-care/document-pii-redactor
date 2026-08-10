@@ -116,7 +116,10 @@ Good to know:
   numbering consistent. Hash tokens need no threading.
 
 For a runnable end-to-end walkthrough, see
-[`examples/quickstart.ipynb`](examples/quickstart.ipynb).
+[`examples/quickstart.ipynb`](examples/quickstart.ipynb) — and
+[`examples/byo_ocr_nemotron.ipynb`](examples/byo_ocr_nemotron.ipynb) for
+plugging in [Nemotron OCR v2](https://huggingface.co/nvidia/nemotron-ocr-v2)
+as the OCR for difficult or blurred scans.
 
 <details>
 <summary><b>API reference</b></summary>
