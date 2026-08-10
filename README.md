@@ -52,6 +52,17 @@ Tesseract (`apt-get install tesseract-ocr` / `brew install tesseract`) is
 needed only for the built-in image OCR — not for text-only use or
 bring-your-own-OCR.
 
+The model weights on Hugging Face are gated — authenticate once before
+first use (weights download when a redactor is first constructed):
+
+```bash
+hf auth login                    # interactive, stores the token locally
+# or non-interactive (CI, servers):
+export HF_TOKEN="your-access-token"
+```
+
+Generate a token under Hugging Face → Settings → Access Tokens.
+
 ## Quickstart
 
 Load once, detect once — every transform consumes the `detect()` result:
