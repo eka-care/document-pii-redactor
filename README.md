@@ -17,9 +17,11 @@ Most PII redactors stop at plain text. This one also handles **document
 images** — both the text in them (names, addresses, IDs, dates, phones, …)
 and **visual entities** (signatures, stamps, QR codes, face photos,
 fingerprints). The models are trained on **Indian names, documents, and
-contexts**, and the text model works across **Indian languages**. Image OCR defaults to lightweight **Tesseract**, and [**Bring-your-own OCR**](#quickstart)
-lets any OCR (Textract, Google Vision, etc) plug straight in for even better
-accuracy.
+contexts**, and the text model works across **Indian languages**. Image OCR
+defaults to lightweight **Tesseract**, which works well for PDFs and
+good-quality images; for more difficult or blurred images,
+[**Bring-your-own OCR**](#quickstart) lets a model like [**Nemotron OCR**](https://huggingface.co/nvidia/nemotron-ocr-v2)
+(or Textract, Google Vision, etc) plug straight in for better results.
 ## What it does
 
 `detect()` is the core primitive — it finds every PII entity with its
@@ -38,8 +40,8 @@ location, category, and confidence. The three transforms consume its output:
 ## Install
 
 ```bash
-pip install document-pii-redactor            # core: text + OCR pipelines (permissive licenses)
-pip install "document-pii-redactor[visual]"  # + visual-entity detection (AGPL-3.0 — see License)
+pip install "document-pii-redactor[visual]"  # full pipeline, used by the quickstart below (AGPL-3.0 — see License)
+pip install document-pii-redactor            # text + OCR pipelines only, no visual entities (permissive licenses)
 pip install "document-pii-redactor[server]"  # + FastAPI service
 ```
 
@@ -114,7 +116,10 @@ Good to know:
   numbering consistent. Hash tokens need no threading.
 
 For a runnable end-to-end walkthrough, see
-[`examples/quickstart.ipynb`](examples/quickstart.ipynb).
+[`examples/quickstart.ipynb`](examples/quickstart.ipynb) — and
+[`examples/byo_ocr_nemotron.ipynb`](examples/byo_ocr_nemotron.ipynb) for
+plugging in [Nemotron OCR v2](https://huggingface.co/nvidia/nemotron-ocr-v2)
+as the OCR for difficult or blurred scans.
 
 <details>
 <summary><b>API reference</b></summary>

@@ -33,14 +33,42 @@ def test_pseudonyms_continue_across_documents_with_shared_mapping():
     assert page2 == "Person_2 and Person_1"
 
 
-def test_overlapping_spans_skip_consumed_region():
+def test_overlapping_spans_union_leaves_nothing_uncovered():
+    # Overlap must never leak: [0,4) + [2,6) covers all of "abcdef",
+    # so the whole range gets ONE pseudonym — no trailing "ef".
     text = "abcdef"
     spans = [
         _span("email", 0, 4, "contact", "abcd"),
-        _span("email", 2, 6, "contact", "cdef"),  # overlaps -> skipped
+        _span("email", 2, 6, "contact", "cdef"),
     ]
     out = apply_pseudonyms(text, spans, PseudonymMapping())
-    assert out == "Email_1ef"
+    assert out == "Email_1"
+
+
+def test_same_start_overlap_widest_wins_redact_and_deid():
+    # Detector emitted a short and a long span at the same offset; keeping
+    # the shorter used to leave "ajesh Kumar Sharma" in the redacted output.
+    from document_pii_redactor.text.redactor import apply_mask
+
+    text = "Rajesh Kumar Sharma lives here."
+    spans = [
+        _span("primary_subject_name", 0, 6, "person", "Rajesh"),
+        _span("primary_subject_name", 0, 19, "person", "Rajesh Kumar Sharma"),
+    ]
+    assert apply_mask(text, spans) == "[REDACTED] lives here."
+    out = apply_pseudonyms(text, spans, PseudonymMapping())
+    assert out == "Person_1 lives here."
+
+
+def test_cross_category_overlap_unions_with_widest_category():
+    text = "UH00219834X"
+    spans = [
+        _span("other_id", 0, 3, "id", "UH0"),
+        _span("mrn_uhid", 0, 11, "id", "UH00219834X"),
+    ]
+    from document_pii_redactor.text.transforms import union_overlapping_spans
+    (u,) = union_overlapping_spans(text, spans)
+    assert (u.start, u.end, u.category) == (0, 11, "mrn_uhid")
 
 
 def test_split_name_spans_merge_into_one_pseudonym():

@@ -15,19 +15,25 @@ from ..entities import PIIEntity
 from ..taxonomy import l1_group
 
 
+def require_ultralytics():
+    """Return the ultralytics YOLO class, or raise a helpful ImportError.
+
+    Called both here and at `ImagePIIRedactor` construction so a missing
+    extra fails fast — before any weights are downloaded."""
+    try:
+        from ultralytics import YOLO  # lazy import — AGPL-3.0, optional extra
+    except ImportError as exc:
+        raise ImportError(
+            "Visual-entity detection needs the 'visual' extra: "
+            "pip install 'document-pii-redactor[visual]' — or pass "
+            "detect_visual=False to detect text PII only."
+        ) from exc
+    return YOLO
+
+
 class YOLODetector:
     def __init__(self, weights_path: str, device: str, score_threshold: float = 0.25):
-        try:
-            from ultralytics import YOLO  # lazy import — AGPL-3.0, optional extra
-        except ImportError as exc:
-            raise ImportError(
-                "Visual-entity detection needs the 'visual' extra: "
-                "pip install 'document-pii-redactor[visual]'. Note that the "
-                "ultralytics dependency and the visual detector weights are "
-                "AGPL-3.0 licensed (see the README's license section); use "
-                "detect_visual=False for the permissively-licensed text-only "
-                "pipeline."
-            ) from exc
+        YOLO = require_ultralytics()
 
         self.model = YOLO(weights_path)
         # ultralytics device: 0 for the first CUDA GPU, else "cpu".

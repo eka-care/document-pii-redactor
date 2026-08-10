@@ -52,16 +52,44 @@ def anonymize_value(category: str, value: str) -> str:
     return f"[{label_for(category).upper()}]"
 
 
+def union_overlapping_spans(text: str, spans: Iterable[TextPIISpan]) -> list[TextPIISpan]:
+    """Collapse overlapping spans into one span covering their union.
+
+    The detector can emit two spans over the same characters (e.g. both
+    [0, 4) and [0, 19) starting at one offset). Keeping only one and
+    skipping the other would leave the uncovered tail in the "redacted"
+    output — every covered character must stay covered, so overlapping
+    spans become a single span over their union, with the widest member
+    supplying the category.
+    """
+    groups: list[list] = []  # [start, end, widest-member]
+    for sp in sorted(spans, key=lambda s: (s.start, s.start - s.end)):
+        if groups and sp.start < groups[-1][1]:
+            g = groups[-1]
+            g[1] = max(g[1], sp.end)
+            if sp.end - sp.start > g[2].end - g[2].start:
+                g[2] = sp
+        else:
+            groups.append([sp.start, sp.end, sp])
+    return [
+        TextPIISpan(category=rep.category, start=start, end=end, l1=rep.l1,
+                    text=text[start:end], score=rep.score)
+        if (start, end) != (rep.start, rep.end) else rep
+        for start, end, rep in groups
+    ]
+
+
 def merge_adjacent_spans(text: str, spans: Iterable[TextPIISpan]) -> list[TextPIISpan]:
     """Merge same-category spans separated by whitespace only.
 
     BIO decoding sometimes restarts mid-entity, splitting "Mr. John Doe" into
     two spans — without merging, de-identification numbers them separately
     ("Person_1 Person_2"). Whitespace-only separators are safe to bridge; a
-    comma is not ("John, Asha" is two people, not one).
+    comma is not ("John, Asha" is two people, not one). Overlapping spans
+    are first collapsed to their union (see `union_overlapping_spans`).
     """
     merged: list[TextPIISpan] = []
-    for sp in sorted(spans, key=lambda s: s.start):
+    for sp in union_overlapping_spans(text, spans):
         prev = merged[-1] if merged else None
         if (prev is not None and sp.category == prev.category
                 and sp.start >= prev.end and not text[prev.end:sp.start].strip()):

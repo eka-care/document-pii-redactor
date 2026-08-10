@@ -110,6 +110,12 @@ class ImagePIIRedactor:
         self._categories = (set(validate_entities(categories))
                             if categories is not None else None)
 
+        if detect_visual:
+            # Fail fast with the install hint before any weights download.
+            from .yolo11m import require_ultralytics
+
+            require_ultralytics()
+
         lm_dir, yolo_path = _resolve_sources(hf_repo, detect_visual, cache_dir)
         self.layoutlmv3 = LayoutLMv3Detector(lm_dir, self.device)
 
