@@ -74,6 +74,17 @@ def _resolve_sources(hf_repo: str, detect_visual: bool, cache_dir: Optional[str]
     return lm_dir, yolo_path
 
 
+def filter_text_entities(entities: list[PIIEntity],
+                         threshold: float) -> list[PIIEntity]:
+    """Drop text entities whose confidence falls below `threshold`.
+
+    Visual entities pass through untouched — YOLO applies its own
+    `visual_score_threshold` at inference. A text entity with no score is
+    kept rather than silently dropped."""
+    return [e for e in entities
+            if e.kind != "text" or e.score is None or e.score >= threshold]
+
+
 class ImagePIIRedactor:
     """Detect and redact PII (text + visual) in document images."""
 
@@ -89,6 +100,7 @@ class ImagePIIRedactor:
         device: Optional[str] = None,
         categories: Optional[Iterable[str]] = None,
         visual_score_threshold: float = 0.25,
+        text_score_threshold: float = 0.75,
         ocr_lang: Optional[str] = None,
         cache_dir: Optional[str] = None,
     ):
@@ -101,12 +113,16 @@ class ImagePIIRedactor:
             device: "cuda" / "cpu". None -> auto (cuda if available, else cpu).
             categories: the categories to detect. Default None = all of them.
             visual_score_threshold: YOLO confidence cutoff for visual entities.
+            text_score_threshold: LayoutLMv3 confidence cutoff for text
+                entities — words below it are not reported (and therefore
+                not transformed). 0 disables the cutoff.
             ocr_lang: Tesseract language/script spec (e.g. "eng", "eng+Devanagari").
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.detect_visual = detect_visual
         self.ocr_lang = ocr_lang
         self.visual_score_threshold = visual_score_threshold
+        self.text_score_threshold = text_score_threshold
         self._categories = (set(validate_entities(categories))
                             if categories is not None else None)
 
@@ -203,6 +219,7 @@ class ImagePIIRedactor:
             results = self.layoutlmv3.detect(img, ocr_lang=lang,
                                              words=words, boxes=boxes)
 
+        results = filter_text_entities(results, self.text_score_threshold)
         if wanted is None:
             return results
         return [e for e in results if e.category in wanted]

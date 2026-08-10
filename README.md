@@ -130,7 +130,7 @@ as the OCR for difficult or blurred scans.
 ```python
 ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
                   categories=None, visual_score_threshold=0.25,
-                  ocr_lang=None, cache_dir=None)
+                  text_score_threshold=0.75, ocr_lang=None, cache_dir=None)
 ```
 
 | arg | meaning |
@@ -140,6 +140,7 @@ ImagePIIRedactor(hf_repo, *, detect_visual=True, device=None,
 | `device` | `"cuda"` / `"cpu"`. `None` → auto (CUDA if available). |
 | `categories` | The categories to detect. Default `None` = all of them. |
 | `visual_score_threshold` | Visual-entity confidence cutoff. |
+| `text_score_threshold` | Text-entity confidence cutoff — words the text model scores below it are not reported (and so not transformed). Default 0.75; 0 disables. |
 | `ocr_lang` | Tesseract language/script, e.g. `"eng"`, `"eng+Devanagari"`. |
 
 ### detect

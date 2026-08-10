@@ -96,6 +96,8 @@ def _get() -> ImagePIIRedactor:
             detect_visual=os.environ.get("EKA_PII_DETECT_VISUAL", "1") == "1",
             device=os.environ.get("EKA_PII_DEVICE") or None,
             categories=_env_categories(),
+            text_score_threshold=float(
+                os.environ.get("EKA_PII_TEXT_THRESHOLD", "0.75")),
         )
     return _redactor
 
