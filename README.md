@@ -17,9 +17,11 @@ Most PII redactors stop at plain text. This one also handles **document
 images** — both the text in them (names, addresses, IDs, dates, phones, …)
 and **visual entities** (signatures, stamps, QR codes, face photos,
 fingerprints). The models are trained on **Indian names, documents, and
-contexts**, and the text model works across **Indian languages**. Image OCR
-defaults to lightweight **Tesseract**, which works well for PDFs and
-good-quality images; for more difficult or blurred images,
+contexts**, and the text model works across **Indian languages**. The main
+contribution is the **PII token classifier** — OCR is just the pluggable
+input stage in front of it. It defaults to lightweight **Tesseract**, which
+works well for PDFs and good-quality images; for more difficult or blurred
+images,
 [**Bring-your-own OCR**](#quickstart) lets a model like [**Nemotron OCR**](https://huggingface.co/nvidia/nemotron-ocr-v2)
 (or Textract, Google Vision, etc) plug straight in for better results
 ([example notebook](examples/byo_ocr_nemotron.ipynb)).
