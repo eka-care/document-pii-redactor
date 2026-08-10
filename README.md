@@ -20,7 +20,7 @@ fingerprints). The models are trained on **Indian names, documents, and
 contexts**, and the text model works across **Indian languages**. Image OCR
 defaults to lightweight **Tesseract**, which works well for PDFs and
 good-quality images; for more difficult or blurred images,
-[**Bring-your-own OCR**](#quickstart) lets a model like **Nemotron OCR**
+[**Bring-your-own OCR**](#quickstart) lets a model like [**Nemotron OCR**](https://huggingface.co/nvidia/nemotron-ocr-v2)
 (or Textract, Google Vision, etc) plug straight in for better results.
 ## What it does
 
