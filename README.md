@@ -39,8 +39,8 @@ location, category, and confidence. The three transforms consume its output:
 ## Install
 
 ```bash
-pip install document-pii-redactor            # core: text + OCR pipelines (permissive licenses)
-pip install "document-pii-redactor[visual]"  # + visual-entity detection (AGPL-3.0 — see License)
+pip install "document-pii-redactor[visual]"  # full pipeline, used by the quickstart below (AGPL-3.0 — see License)
+pip install document-pii-redactor            # text + OCR pipelines only, no visual entities (permissive licenses)
 pip install "document-pii-redactor[server]"  # + FastAPI service
 ```
 
