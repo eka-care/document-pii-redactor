@@ -11,6 +11,8 @@ Built for Indian documents, light enough to run on CPU.
 [![Demo](https://img.shields.io/badge/%F0%9F%A4%97-live_demo-ffd21e)](https://huggingface.co/spaces/ekacare/document-pii-redactor)
 [![Models](https://img.shields.io/badge/%F0%9F%A4%97-model_weights-ffd21e)](https://huggingface.co/ekacare/document-pii-redactor)
 
+[**Try it at medai.eka.care/pii-redactor**](https://medai.eka.care/pii-redactor) — the fastest way to see it work · [**Launch blog**](https://info.eka.care/services/releasing-parrotlet-open-models-open-weights-for-medical-document-intelligence)
+
 </div>
 
 Most PII redactors stop at plain text. This one also handles **document

@@ -57,9 +57,19 @@ export default function App() {
             <p className="subtitle">Redact PII in images and plain text</p>
           </div>
         </div>
-        <div className={`status-pill ${ready ? 'is-ready' : 'is-loading'}`} role="status">
-          <span className="status-dot" />
-          {ready ? `Ready · ${device}` : 'Waking up the model…'}
+        <div className="header-right">
+          <a
+            className="fast-demo-link"
+            href="https://medai.eka.care/pii-redactor"
+            target="_blank"
+            rel="noreferrer"
+          >
+            For a faster experience, use medai.eka.care ↗
+          </a>
+          <div className={`status-pill ${ready ? 'is-ready' : 'is-loading'}`} role="status">
+            <span className="status-dot" />
+            {ready ? `Ready · ${device}` : 'Waking up the model…'}
+          </div>
         </div>
       </header>
 
