@@ -8,10 +8,10 @@ Built for Indian documents, light enough to run on CPU.
 [![PyPI](https://img.shields.io/pypi/v/document-pii-redactor?color=2f6feb)](https://pypi.org/project/document-pii-redactor/)
 [![Python](https://img.shields.io/pypi/pyversions/document-pii-redactor?color=2f6feb)](https://pypi.org/project/document-pii-redactor/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2f6feb)](#license--citation)
-[![Demo](https://img.shields.io/badge/%F0%9F%A4%97-live_demo-ffd21e)](https://huggingface.co/spaces/ekacare/document-pii-redactor)
+[![Live demo](https://img.shields.io/badge/%E2%9A%A1_live_demo-medai.eka.care-16a34a)](https://medai.eka.care/pii-redactor)
+[![Space](https://img.shields.io/badge/%F0%9F%A4%97-space-ffd21e)](https://huggingface.co/spaces/ekacare/document-pii-redactor)
 [![Models](https://img.shields.io/badge/%F0%9F%A4%97-model_weights-ffd21e)](https://huggingface.co/ekacare/document-pii-redactor)
-
-[**Try it at medai.eka.care/pii-redactor**](https://medai.eka.care/pii-redactor) — a faster way to see it work · [**Launch blog**](https://info.eka.care/services/releasing-parrotlet-open-models-open-weights-for-medical-document-intelligence)
+[![Blog](https://img.shields.io/badge/%F0%9F%93%9D-launch_blog-6b7280)](https://info.eka.care/services/releasing-parrotlet-open-models-open-weights-for-medical-document-intelligence)
 
 </div>
 
