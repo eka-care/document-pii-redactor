@@ -83,8 +83,11 @@ def _resolve_text_source(hf_repo: str, cache_dir: Optional[str]) -> str:
         return str(d if d.is_dir() else local)
     from huggingface_hub import snapshot_download
 
+    # Top-level config.json rides along so the Hub's download counter (which
+    # counts config.json requests) registers every model download.
     snap = snapshot_download(
-        repo_id=hf_repo, allow_patterns=f"{MINILM_SUBDIR}/*", cache_dir=cache_dir
+        repo_id=hf_repo, allow_patterns=[f"{MINILM_SUBDIR}/*", "config.json"],
+        cache_dir=cache_dir,
     )
     return os.path.join(snap, *MINILM_SUBDIR.split("/"))
 

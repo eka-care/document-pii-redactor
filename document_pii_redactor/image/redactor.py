@@ -62,8 +62,11 @@ def _resolve_sources(hf_repo: str, detect_visual: bool, cache_dir: Optional[str]
 
     from huggingface_hub import hf_hub_download, snapshot_download
 
+    # Top-level config.json rides along so the Hub's download counter (which
+    # counts config.json requests) registers every model download.
     snap = snapshot_download(
-        repo_id=hf_repo, allow_patterns=f"{LAYOUTLMV3_SUBDIR}/*", cache_dir=cache_dir
+        repo_id=hf_repo, allow_patterns=[f"{LAYOUTLMV3_SUBDIR}/*", "config.json"],
+        cache_dir=cache_dir,
     )
     lm_dir = os.path.join(snap, *LAYOUTLMV3_SUBDIR.split("/"))
     yolo_path = None
