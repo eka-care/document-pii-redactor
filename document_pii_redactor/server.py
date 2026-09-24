@@ -4,7 +4,9 @@ the whole thing as one container.
 Endpoints:
     GET  /health                      -> {"status": "ok", "device": ...}
     GET  /entities                    -> {"text": [...], "visual": [...]}
-    POST /detect  (multipart: file)   -> {"entities": [...]}
+    POST /detect  (multipart: file[, words=<json list>, boxes=<json [[x0,y0,x1,y1],...]>])
+                                      -> {"entities": [...]}   (words+boxes: bring-your-own
+                                         OCR, Tesseract is skipped; pixel coords of the image)
     POST /redact  (multipart: file, mode=solid|blur|pixelate) -> image/png
     POST /deidentify (multipart: file) -> {"image": <base64 png>, "mapping": ...}
     POST /anonymize  (multipart: file) -> image/png
@@ -19,9 +21,10 @@ Config via env vars (read at startup):
 from __future__ import annotations
 
 import io
+import json
 import os
 
-from fastapi import FastAPI, File, Form, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -116,10 +119,27 @@ def entities():
     return ImagePIIRedactor.list_entities()
 
 
+def _parse_ocr(words: str | None, boxes: str | None):
+    """Optional bring-your-own OCR, sent as two JSON form fields."""
+    if words is None and boxes is None:
+        return None, None
+    if words is None or boxes is None:
+        raise HTTPException(400, "words and boxes must be sent together")
+    try:
+        return json.loads(words), json.loads(boxes)
+    except ValueError as exc:
+        raise HTTPException(400, f"words/boxes are not JSON: {exc}") from exc
+
+
 @app.post("/detect")
-async def detect(file: UploadFile = File(...), categories: str | None = Query(None)):
+async def detect(file: UploadFile = File(...), categories: str | None = Query(None),
+                 words: str | None = Form(None), boxes: str | None = Form(None)):
     data = await file.read()
-    ents = _get().detect(data, categories=_parse_categories(categories))
+    w, b = _parse_ocr(words, boxes)
+    try:
+        ents = _get().detect(data, categories=_parse_categories(categories), words=w, boxes=b)
+    except ValueError as exc:                       # _validate_ocr_input
+        raise HTTPException(400, str(exc)) from exc
     return JSONResponse({"entities": [e.to_dict() for e in ents]})
 
 
