@@ -247,7 +247,20 @@ comma-separated, absent = all): `POST /detect`, `POST /redact`
 `GET /entities`, `GET /entities-text`.
 
 **Env**: `EKA_PII_HF_REPO`, `EKA_PII_DETECT_VISUAL`, `EKA_PII_DEVICE`,
-`EKA_PII_CATEGORIES`.
+`EKA_PII_CATEGORIES`, `EKA_PII_TEXT_ONLY`.
+
+**Text-only server** — `EKA_PII_TEXT_ONLY=1` loads only the text model at
+startup (no image/layout model, no Tesseract needed). `GET /health` answers
+`{"status": "ok", "device": ..., "mode": "text"}`, and the image routes
+(`/detect`, `/redact`, `/deidentify`, `/anonymize`, `/entities`) answer
+`503 {"error": "text-only server"}`. The text routes work as usual, e.g.
+`POST /detect-text {"text": ...}` returns `{"spans": [...]}` (each span
+`to_dict()`, with offsets into `text`).
+
+```bash
+docker run -e EKA_PII_TEXT_ONLY=1 -p 7860:7860 document-pii-redactor
+curl -s -X POST localhost:7860/detect-text -H 'content-type: application/json' -d '{"text": "Call Ravi on 9876543210"}'
+```
 
 ```bash
 curl -F file=@page.jpg http://localhost:7860/detect

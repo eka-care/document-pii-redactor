@@ -17,6 +17,12 @@ Config via env vars (read at startup):
     EKA_PII_DETECT_VISUAL  "1"/"0"  (default 1)
     EKA_PII_DEVICE         "cuda"/"cpu" (default auto)
     EKA_PII_CATEGORIES     comma-separated categories to detect (default: all)
+    EKA_PII_TEXT_ONLY      "1" -> serve the text model only: startup loads just the text
+                           redactor, /health reports {"status": "ok", "device": ...,
+                           "mode": "text"}, and every image route (/detect, /redact,
+                           /deidentify, /anonymize, /entities) answers 503
+                           {"error": "text-only server"} without loading the image model
+                           (default 0)
 """
 from __future__ import annotations
 
@@ -24,7 +30,7 @@ import io
 import json
 import os
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -78,6 +84,24 @@ def _env_categories(only_text: bool = False) -> list[str] | None:
     return raw or None
 
 
+def _text_only() -> bool:
+    return os.environ.get("EKA_PII_TEXT_ONLY", "0") == "1"
+
+
+def _require_image() -> None:
+    """Dependency of the image routes: 503 on a text-only server, before any model loads."""
+    if _text_only():
+        raise HTTPException(503, "text-only server")
+
+
+@app.exception_handler(HTTPException)
+async def _http_error(request, exc: HTTPException):
+    if exc.status_code == 503 and exc.detail == "text-only server":
+        return JSONResponse({"error": "text-only server"}, status_code=503)
+    from fastapi.exception_handlers import http_exception_handler
+    return await http_exception_handler(request, exc)
+
+
 def _get_text():
     global _text_redactor
     if _text_redactor is None:
@@ -105,16 +129,21 @@ def _get() -> ImagePIIRedactor:
 
 @app.on_event("startup")
 def _warm():
-    _get()  # load models at startup so the first request is fast
+    if _text_only():
+        _get_text()   # text model only; the image model is never loaded
+    else:
+        _get()  # load models at startup so the first request is fast
 
 
 @app.get("/health")
 def health():
+    if _text_only():
+        return {"status": "ok", "device": _get_text().device, "mode": "text"}
     return {"status": "ok", "device": _get().device,
             "detect_visual": _get().detect_visual}
 
 
-@app.get("/entities")
+@app.get("/entities", dependencies=[Depends(_require_image)])
 def entities():
     return ImagePIIRedactor.list_entities()
 
@@ -131,7 +160,7 @@ def _parse_ocr(words: str | None, boxes: str | None):
         raise HTTPException(400, f"words/boxes are not JSON: {exc}") from exc
 
 
-@app.post("/detect")
+@app.post("/detect", dependencies=[Depends(_require_image)])
 async def detect(file: UploadFile = File(...), categories: str | None = Query(None),
                  words: str | None = Form(None), boxes: str | None = Form(None)):
     data = await file.read()
@@ -143,7 +172,7 @@ async def detect(file: UploadFile = File(...), categories: str | None = Query(No
     return JSONResponse({"entities": [e.to_dict() for e in ents]})
 
 
-@app.post("/redact")
+@app.post("/redact", dependencies=[Depends(_require_image)])
 async def redact(
     file: UploadFile = File(...),
     mode: str = Form("solid"),
@@ -193,7 +222,7 @@ def anonymize_text(body: _TextIn):
     return {"text": _get_text().anonymize(body.text, spans)}
 
 
-@app.post("/deidentify")
+@app.post("/deidentify", dependencies=[Depends(_require_image)])
 async def deidentify(file: UploadFile = File(...),
                      categories: str | None = Query(None),
                      strategy: str = Query("counter"),
@@ -213,7 +242,7 @@ async def deidentify(file: UploadFile = File(...),
     })
 
 
-@app.post("/anonymize")
+@app.post("/anonymize", dependencies=[Depends(_require_image)])
 async def anonymize(file: UploadFile = File(...), categories: str | None = Query(None)):
     data = await file.read()
     ents = _get().detect(data, categories=_parse_categories(categories))
